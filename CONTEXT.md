@@ -51,7 +51,9 @@ Game: character avoids an enemy in a confined forest map
 Projector displays the game on the board
 ```
 
-This is a conceptual architecture. No game engine, gesture model, camera interface, or communication protocol has been selected.
+The initial gesture prototype uses Python, MediaPipe Hand Landmarker for local CPU inference, OpenCV camera capture, and a Pygame top-down forest demo. The camera should be mounted overhead, looking down at the back of the hand and wrist. The primary mapping is: open hand at neutral angle moves up, a comfortable closed fist at neutral angle moves down, left tilt moves left, and right tilt moves right. Sideways tilt takes priority over finger posture. Partially relaxed fingers at neutral angle stop movement; tracking loss and manual pause also stop movement. Hand position in the camera image is ignored. Thumb-to-finger touches provide a second mode. Movement mode has five calibration steps: relaxed neutral, comfortable fist, open hand, left tilt, and right tilt. The wrist-to-knuckle vector estimates hand tilt in the board plane; this is an image-based steering signal, not an isolated clinical wrist angle measurement. Optional local UDP JSON output allows another game process to consume normalized movement commands. These choices are for the prototype and can change after Jetson performance testing.
+
+The team's reported target environment is JetPack 7.2.1-b49, Python 3.12.3, aarch64, and glibc 2.39. Jetson camera operation and performance have not yet been verified. Setup and usage are documented in `README.md`.
 
 An additional proposed input path is: board camera capture -> robot tracking on the Jetson -> mapping the robot footprint into game coordinates -> overlap check against the projected player -> projected loss feedback. Camera-to-board and projector-to-board calibration will be needed to compare both positions in a shared coordinate system. How the robot moves or receives commands remains open.
 
