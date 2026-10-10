@@ -40,7 +40,7 @@ export function createFight(config, hero, { chooseAim, onResolve } = {}) {
       f.counterAt = null; f.bossHP -= 1;
       if (f.bossHP <= 0) { f.phase = 'victory'; f.victoryAt = now; f.message = 'BOSS DEFEATED'; return; }
     }
-    if (f.phase === 'warning' && now - phaseAt >= T.warning) {      // fire, resolve the hit now
+    if (f.phase === 'warning' && now - phaseAt >= (config.warning ?? T.warning)) { // config.warning overrides the default (see levels.mjs)
       f.phase = 'laser'; phaseAt = now; f.firedAt = now;
       const p1 = { x: hero.position.x, z: hero.position.z };
       const blocked = now < f.shieldUntil, dashed = now < f.dashUntil;
