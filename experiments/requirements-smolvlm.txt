@@ -1,0 +1,7 @@
+# Install CUDA-enabled torch separately for the Jetson's exact JetPack version.
+# Keep these optional dependencies separate from the working game environment.
+transformers>=4.51,<5
+accelerate>=1,<2
+pillow>=10,<13
+num2words>=0.5.14,<1
+opencv-contrib-python>=4.10,<5
