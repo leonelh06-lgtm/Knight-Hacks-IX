@@ -199,6 +199,59 @@ including crashes or power loss. No robot commands are sent by this prototype.
 
 ## Verification
 
+### Benchmark CPU versus GPU
+
+Record a short MP4/AVI showing the palm-facing open, fist, index pinch, pinkie
+pinch, and relaxed gestures. Include all gestures in the first 10 seconds and keep
+the hand visible. Put the video at `recordings/hand-test.mp4` on the Jetson. You can
+record it using a camera app; this command does not record or use a live webcam.
+
+From the project root with the environment activated:
+
+```bash
+python -m gesture_control.benchmark --video recordings/hand-test.mp4 --label jetson-orin-nano
+```
+
+The default compares CPU/GPU over three trials each, using 20 warmup frames and
+up to 300 measured frames per trial. Each trial starts a fresh detector and runs
+the exact same warmup and measured frames. Run order alternates to reduce order
+bias. Video is decoded once before timing, limited to 640x480 while preserving
+aspect ratio; recorded timestamps are preserved for tracking. Close the game and
+other heavy apps first, keep power/cooling settings fixed, and repeat before
+publishing a performance claim.
+
+Outputs (ignored by Git):
+
+- `benchmark-results/summary.csv`: per-trial and pooled aggregate mean/p95 inference
+  time, processing FPS, usable-hand detection rate, metadata, and CPU/GPU speedup.
+- `benchmark-results/summary-frames.csv`: every measured frame's inference time
+  and whether usable hand landmarks were detected.
+
+GPU failures are marked as errors; CPU results are retained, the command exits
+with status 1, and no speedup is reported. GPU is never replaced with CPU. A
+speedup below 1 means GPU was slower. p95 uses the nearest-rank percentile; the
+aggregate pools all measured frames, rather than averaging trial percentiles.
+
+Processing FPS includes image wrapping, synchronous inference, and landmark feature
+extraction. It excludes decoding, camera capture, rendering, gesture/game logic,
+and model initialization. Inference timing measures the blocking `detect_for_video`
+call. Detection rate is the share of frames with valid hand features, **not** gesture
+accuracy; a reliable accuracy measure requires manually labeled ground truth.
+
+For a laptop comparison, copy the exact same video and run:
+
+```bash
+python -m gesture_control.benchmark --video recordings/hand-test.mp4 --devices cpu --label laptop --output benchmark-results/laptop.csv
+```
+
+Match video/model hashes, input resolution, warmup, frame count, MediaPipe version,
+and mirroring before comparing aggregate rows. Jetson CPU/GPU speedup alone does
+not demonstrate that the Jetson beats the laptop. `--frames`, `--warmup`, `--trials`,
+`--mirror`, and `--output` customize the benchmark. No speedup has been measured
+on the team's Jetson by this repository's author yet.
+
+### Automated tests
+
 Pure control tests need no camera, MediaPipe, or Pygame:
 
 ```bash
