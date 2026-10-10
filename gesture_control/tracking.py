@@ -17,9 +17,6 @@ class Snapshot:
     inference_ms: float = 0
     error: str = ''
     phase: str = 'Opening camera'
-    prediction: str = 'unknown'
-    prediction_timestamp: float = 0
-    raw_answer: str = ''
 
 
 BACKENDS = {'auto': 'CAP_ANY', 'dshow': 'CAP_DSHOW', 'msmf': 'CAP_MSMF',

@@ -24,12 +24,6 @@ def parse_args():
     parser.add_argument('--camera-backend', choices=tuple(BACKENDS), default='auto')
     parser.add_argument('--camera-timeout', type=float, default=30, help='Camera/model startup timeout in seconds')
     parser.add_argument('--model', default='models/hand_landmarker.task')
-    parser.add_argument('--detector', choices=('mediapipe', 'smolvlm'), default='mediapipe')
-    parser.add_argument('--smolvlm-device', choices=('cuda', 'cpu'), default='cuda')
-    parser.add_argument('--smolvlm-offline', action='store_true')
-    parser.add_argument('--smolvlm-stale-after', type=float, default=2,
-                        help='Maximum age of the image used for a SmolVLM2 prediction (seconds)')
-    parser.add_argument('--smolvlm-startup-timeout', type=float, default=300)
     parser.add_argument('--inference-device', choices=('cpu', 'gpu'), default='cpu',
                         help='MediaPipe inference delegate (GPU requires a supported build/driver)')
     parser.add_argument('--mode', choices=('movement', 'pinch'), default='movement')
@@ -51,22 +45,16 @@ def parse_args():
     parser.add_argument('--screenshot', help='Save final demo frame to a PNG')
     args = parser.parse_args()
     if any(not math.isfinite(v) or v <= 0 for v in
-           (args.speed, args.pinch_threshold, args.stale_after, args.camera_timeout,
-            args.smolvlm_stale_after, args.smolvlm_startup_timeout)) or args.frames < 0:
+           (args.speed, args.pinch_threshold, args.stale_after, args.camera_timeout)) or args.frames < 0:
         parser.error('Speed, pinch threshold and stale timeout must be positive; frames must be nonnegative.')
     if args.udp_port is not None and not 1 <= args.udp_port <= 65535:
         parser.error('UDP port must be between 1 and 65535.')
-    if args.detector == 'smolvlm' and (args.mode != 'movement' or args.hand != 'any'):
-        parser.error('SmolVLM2 supports movement mode with --hand any; show only one hand.')
     return args
 
 
 def main():
     args = parse_args()
-    smolvlm = args.detector == 'smolvlm' and not args.simulate
-    if smolvlm:
-        from .smolvlm import SmolTracker, gesture_command
-    if not args.simulate and not smolvlm and not Path(args.model).is_file():
+    if not args.simulate and not Path(args.model).is_file():
         raise SystemExit('Model missing. Run: python -m gesture_control.download_model')
     try:
         import pygame
@@ -89,8 +77,6 @@ def main():
     if args.simulate:
         controller.calibration = Calibration(.2, .9)
         note = 'SIMULATED INPUT - hardware is not being tested.'
-    elif smolvlm:
-        note = 'SmolVLM2 experimental controls: show one hand. No landmark calibration needed.'
     elif profile.is_file():
         try:
             data = json.loads(profile.read_text(encoding='utf-8'))
@@ -106,14 +92,9 @@ def main():
     udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) if args.udp_port else None
     if not args.simulate:
         camera = int(args.camera) if args.camera.isdecimal() else args.camera
-        if smolvlm:
-            tracker = SmolTracker(camera, args.mirror, args.camera_backend,
-                                  device=args.smolvlm_device, offline=args.smolvlm_offline,
-                                  startup_timeout=args.smolvlm_startup_timeout)
-        else:
-            tracker = Tracker(args.model, camera, args.hand, args.mirror,
-                              backend=args.camera_backend, startup_timeout=args.camera_timeout,
-                              inference_device=args.inference_device)
+        tracker = Tracker(args.model, camera, args.hand, args.mirror,
+                          backend=args.camera_backend, startup_timeout=args.camera_timeout,
+                          inference_device=args.inference_device)
         tracker.start()
     rng = random.Random(7)
     trees = [(rng.randrange(25, ARENA[0] - 25), rng.randrange(25, ARENA[1] - 25), rng.randrange(16, 28))
@@ -145,7 +126,7 @@ def main():
                         if paused and wizard is not None:
                             wizard.started = None
                             note = 'Recording cancelled. Resume, then press Enter to retry the step.'
-                    elif event.key == pygame.K_c and not smolvlm:
+                    elif event.key == pygame.K_c:
                         wizard = Wizard()
                         paused = False
                         note = ''
@@ -154,7 +135,7 @@ def main():
                         if wizard.started is None:
                             wizard.start_step(now)
                             note = ''
-                    elif event.key == pygame.K_m and not smolvlm:
+                    elif event.key == pygame.K_m:
                         controller.mode = 'pinch' if controller.mode == 'movement' else 'movement'
                         command = controller.stop('Mode changed')
                         last_stamp = 0
@@ -199,8 +180,6 @@ def main():
                     note = f'Calibration complete, but profile could not be saved: {error}'
             elif paused or not running:
                 command = controller.stop('Paused')
-            elif smolvlm:
-                command = gesture_command(snapshot, now, args.smolvlm_stale_after, args.stale_after)
             elif observation is None:
                 command = controller.stop('Hand missing or camera frame stale')
             elif fresh:
@@ -265,19 +244,14 @@ def main():
             if not args.simulate and snapshot.phase != 'Tracking':
                 pygame.draw.rect(canvas, (12, 22, 27), (795, 130, 300, 30))
                 text(snapshot.phase + '...', 800, 135)
-            device_label = ('SIMULATED' if args.simulate else
-                            'Smol ' + args.smolvlm_device.upper() if smolvlm else args.inference_device.upper())
+            device_label = 'SIMULATED' if args.simulate else args.inference_device.upper()
             text(f'{device_label} inference: {snapshot.inference_ms:.0f} ms', 795, 372)
             text(f'Frame age: {min(age, 99):.2f} s', 795, 399)
             if observation:
                 text(f'Opening estimate: {observation.opening:.2f}', 795, 426)
                 text(f'Pinches I:{observation.pinches[0]:.2f} P:{observation.pinches[3]:.2f}', 795, 449)
-            if smolvlm:
-                prediction_age = now - snapshot.prediction_timestamp if snapshot.prediction_timestamp else 99
-                text(f'Gesture: {snapshot.prediction}', 795, 426)
-                text(f'Prediction age: {min(prediction_age, 99):.2f} s', 795, 449)
-            text('No calibration needed' if smolvlm else 'C  Calibrate    Enter  Record step', 795, 470)
-            text('One hand visible at a time' if smolvlm else 'M  Switch control mode', 795, 501)
+            text('C  Calibrate    Enter  Record step', 795, 470)
+            text('M  Switch control mode', 795, 501)
             text('Space  Pause / resume', 795, 532)
             text('R  Reset player    Q / Esc  Exit', 795, 563)
             if controller.mode == 'movement':

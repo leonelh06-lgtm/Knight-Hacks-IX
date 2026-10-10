@@ -39,64 +39,6 @@ python -c "import torch; print('CUDA:', torch.cuda.is_available())"
 python experiments/smolvlm_probe.py --video recordings/hand-test.mp4
 ```
 
-The optional requirements pin NumPy 1.26.4 and OpenCV 4.11 to accommodate the
-older SciPy exposed by the team's system-site-packages environment. They also
-install Pygame for live character control. Check `python -m pip check` after
-installing. Install a matching torchvision alongside torch: for the team's
-confirmed JetPack 7.2.1 / L4T 39.2.1 / Python 3.12 setup, NVIDIA documents
-[upstream CUDA 13.2 PyTorch support](https://forums.developer.nvidia.com/t/how-do-i-correctly-install-pytorch-on-jetpack-7-2/372773/5):
-
-```bash
-python -m pip install torch==2.12.0 torchvision==0.27.0 --index-url https://download.pytorch.org/whl/cu132
-```
-
-Use that command only for this confirmed environment, not older JetPack releases.
-
-## Live character control
-
-After pushing/pulling the new code, activate `.venv-smolvlm` and run from the repo root:
-
-```bash
-source .venv-smolvlm/bin/activate
-python -m pip install -r experiments/requirements-smolvlm.txt
-python -m gesture_control --detector smolvlm --camera 0
-```
-
-Try `--camera 1` for another webcam. CUDA is the default for SmolVLM2; CPU requires
-explicit `--smolvlm-device cpu`. The MediaPipe `--inference-device` flag applies
-only to MediaPipe. `--smolvlm-offline` uses previously cached model files.
-
-Show ONE palm-facing hand: open palm moves UP, fist DOWN, index-thumb pinch LEFT,
-pinkie-thumb pinch RIGHT. Unknown predictions stop. No C/Enter calibration is
-required; C and M are inactive in this detector mode. Space pauses/resumes,
-R resets position, Q/Escape exits. `--hand left/right` and legacy `--mode pinch`
-are not supported for SmolVLM2. Camera mirroring remains optional via `--mirror`.
-
-The preview and game run while a background worker loads and evaluates the model.
-Only the latest camera image is selected for each prediction; frames are not
-queued. The sidebar shows model latency and **prediction age**, measured from
-capture, not from inference completion. Movement stops if the prediction's image
-is more than 2 seconds old or camera frames stop arriving for 0.35 seconds.
-An unchanged valid prediction drives movement until it expires or is replaced.
-No-hand recognition depends on the model returning unknown; a fresh but incorrect
-classification can still move the character. Space always pauses movement.
-
-If model processing itself takes longer than 2 seconds, results expire immediately
-and the character remains stopped. For an exploratory test you can explicitly use
-`--smolvlm-stale-after 5`, but that permits commands based on images up to 5 seconds
-old. This is a latency/response tradeoff, not an accuracy improvement. MediaPipe
-remains available for faster control:
-
-```bash
-python -m gesture_control --detector mediapipe --inference-device gpu --camera 0
-```
-
-SmolVLM2 startup allows 300 seconds; increase with `--smolvlm-startup-timeout` for
-slow first downloads. Failures display an error and exit without CPU fallback.
-The standalone recorded-video probe and live game share the exact same model,
-revision, prompt, and strict answer parser. Live SmolVLM2 remains experimental:
-actual camera/GPU responsiveness and gesture accuracy need testing on the Jetson.
-
 The probe uses FP16 on CUDA, FP32 on explicit `--device cpu`, and eager attention
 to avoid requiring FlashAttention builds. CUDA failure does not fall back to CPU.
 Model loading/download can take time; close the game for this first measurement.
