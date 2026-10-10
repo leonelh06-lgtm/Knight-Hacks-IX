@@ -4,10 +4,8 @@ __pycache__/
 *.py[cod]
 models/
 calibration.json
-recordings/
 .env
 .env.*
 .test-deps/
 demo.png
-node_modules/
-.claude/
+benchmark-results/
