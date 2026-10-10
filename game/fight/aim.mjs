@@ -25,3 +25,42 @@ export function makeAdaptive(predictor, { rand = Math.random, shift = 2, minN = 
     return aimAt(boss, p0, v[0] * shift, v[1] * shift);
   };
 }
+
+// Neither chooser above checks that the player has anywhere left to dodge to.
+// withEscapeCheck() wraps a chooser and re-rolls (up to `retries` times) if the
+// aim it picked leaves no reachable point outside the cone within the
+// walkable floor/pillars, given how far the player can move before it fires.
+function inCone(boss, aim, halfAngle, range, p) {
+  const dx = p.x - boss.x, dz = p.z - boss.z, d = Math.hypot(dx, dz);
+  if (d > range) return false;
+  if (d < 1e-6) return true;
+  const cos = Math.max(-1, Math.min(1, (dx * aim.x + dz * aim.z) / d));
+  return Math.acos(cos) <= halfAngle;
+}
+function insideFloor(p, floor, heroR) {
+  if (!floor) return true;
+  const rx = Math.max(1e-6, floor.rx - heroR), rz = Math.max(1e-6, floor.rz - heroR);
+  const dx = (p.x - floor.cx) / rx, dz = (p.z - floor.cz) / rz;
+  return dx * dx + dz * dz <= 1;
+}
+function clearOfPillars(p, pillars, heroR) {
+  return (pillars || []).every((c) => Math.hypot(p.x - c.cx, p.z - c.cz) >= c.r + heroR);
+}
+export function hasEscape(boss, p0, aim, { halfAngle, range, floor, pillars, heroR = 0, reach, samples = 16 }) {
+  if (!inCone(boss, aim, halfAngle, range, p0)) return true; // staying put already escapes
+  for (let i = 0; i < samples; i++) {
+    const ang = (i / samples) * Math.PI * 2;
+    const p = { x: p0.x + Math.cos(ang) * reach, z: p0.z + Math.sin(ang) * reach };
+    if (!insideFloor(p, floor, heroR) || !clearOfPillars(p, pillars, heroR)) continue;
+    if (!inCone(boss, aim, halfAngle, range, p)) return true;
+  }
+  return false;
+}
+export function withEscapeCheck(chooseFn, escapeConfig, retries = 5) {
+  return (boss, p0) => {
+    let aim = chooseFn(boss, p0);
+    if (!aim) return aim; // null means "fight.js aims straight at the player", nothing to re-roll
+    for (let i = 0; i < retries && !hasEscape(boss, p0, aim, escapeConfig); i++) aim = chooseFn(boss, p0);
+    return aim;
+  };
+}

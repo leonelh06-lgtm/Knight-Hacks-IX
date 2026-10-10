@@ -1,23 +1,44 @@
 <!doctype html><meta charset="utf-8">
-<style>html,body{margin:0;height:100%;overflow:hidden}body{display:flex;align-items:center;justify-content:center;background:#111}</style>
-<canvas id="c" width="800" height="560" style="background:#111;max-width:100vw;max-height:100vh;object-fit:contain"></canvas>
+<style>html,body{margin:0;overflow:hidden}</style>
+<canvas id="c" style="background:#111;display:block"></canvas>
 <script type="module">
 import { createFight } from './fight.js';
 import { DodgePredictor } from './predictor.mjs';
-import { makeAdaptive, makeRandomShift } from './aim.mjs';
+import { makeAdaptive, makeRandomShift, withEscapeCheck } from './aim.mjs';
 const cfg = { position: { x: 0, z: 0 }, halfAngle: 0.35, range: 7, counter: 0.5,
-              room: { minX: -5, maxX: 5, minZ: -1, maxZ: 9 } };
+              room: { minX: 0, maxX: 0, minZ: -1, maxZ: 9 } }; // minX/maxX set by resizeCanvas()
 const SHOW_BORDER = false;
+const MAPS = ['maps/level1.png', 'maps/level2.png', 'maps/boss.png'];
+const FLOOR = { cx: 0, cz: 0, rx: 0, rz: 0 }; // computed as fractions of the arena rect in resizeCanvas(), tune via O overlay
+const PILLARS = [ // solid obstacles, level 2 (mapIndex 1) only, tune via O overlay
+  { cx: -1.8, cz: 3, r: 0.6 }, { cx: 1.8, cz: 3, r: 0.6 },
+  { cx: -1.8, cz: 6, r: 0.6 }, { cx: 1.8, cz: 6, r: 0.6 },
+];
+const mapImages = MAPS.map((src) => { const img = new Image(); img.src = src; return img; });
+let mapIndex = 0, showDebugOverlay = false;
+let heroSpeed = 3; // tunable with -/=, actually drives movement
+let warningTimeDisplay = 1.0; // tunable with [/], DISPLAY-ONLY: fight.js's real warning duration is a private const, not reachable from here
 const hero = { position: { x: 0, z: 5 } }, predictor = new DodgePredictor();
 const modes = ['straight', 'random-shift', 'adaptive']; let mode = 0;
 const fns = [() => null, makeRandomShift(), makeAdaptive(predictor)];
+const attackLog = [];
+let pendingMode = modes[mode], pendingPredictedDir = 'STAY', prevPhase = 'idle';
 const ctl = createFight(cfg, hero, {
-  chooseAim: (b, p) => fns[mode](b, p),
-  onResolve: (e) => { predictor.observe({ x: e.p0.x, y: e.p0.z }, { x: e.p1.x, y: e.p1.z }, { x: e.aim.x, y: e.aim.z }); console.log(JSON.stringify(e)); },
+  chooseAim: (b, p) => withEscapeCheck(fns[mode], {
+    halfAngle: cfg.halfAngle, range: cfg.range, floor: FLOOR,
+    pillars: mapIndex === 1 ? PILLARS : [], heroR: HERO_R, reach: heroSpeed * warningTimeDisplay,
+  })(b, p),
+  onResolve: (e) => {
+    const actualDir = predictor.observe({ x: e.p0.x, y: e.p0.z }, { x: e.p1.x, y: e.p1.z }, { x: e.aim.x, y: e.aim.z });
+    console.log(JSON.stringify(e));
+    attackLog.push({ t: e.t, mode: pendingMode, predictedDir: pendingPredictedDir, actualDir, hit: e.hit });
+  },
 });
 const keys = {}, now = () => performance.now() / 1000;
 let lastMoveDir = { x: 0, z: 0 }, dashDir = { x: 0, z: 1 };
 let lastGestureDir = { x: 0, z: 0 }, gestureMsg = null, gestureRecvAt = -1e9;
+let lastNonzeroGestureVel = { x: 0, z: 0 }, gestureZeroSinceT = null; // bridges stop/unclear packets for 150ms
+let gesturePacketTimes = []; // for packets/sec + longest-gap HUD readout
 let ws = null;
 function connectGestureWS() {
   ws = new WebSocket('ws://localhost:8765');
@@ -25,8 +46,15 @@ function connectGestureWS() {
     let m; try { m = JSON.parse(ev.data); } catch { return; }
     if (!Number.isFinite(m.vx) || !Number.isFinite(m.vy)) return;
     gestureMsg = m; gestureRecvAt = now();
+    gesturePacketTimes.push(gestureRecvAt);
     const glen = Math.hypot(m.vx, m.vy);
-    if (glen > 1e-6) lastGestureDir = { x: m.vx / glen, z: m.vy / glen };
+    if (glen > 1e-6) {
+      lastGestureDir = { x: m.vx / glen, z: m.vy / glen };
+      lastNonzeroGestureVel = { x: m.vx, z: m.vy };
+      gestureZeroSinceT = null;
+    } else if (gestureZeroSinceT === null) {
+      gestureZeroSinceT = gestureRecvAt; // first stop/unclear packet in this streak
+    }
   });
   ws.addEventListener('close', () => setTimeout(connectGestureWS, 500));
   ws.addEventListener('error', () => ws.close());
@@ -36,6 +64,22 @@ addEventListener('keydown', (e) => { keys[e.code] = true;
   if (e.code === 'KeyB') ctl.start(now()); if (e.code === 'KeyR') ctl.reset();
   if (e.code === 'KeyM') mode = (mode + 1) % 3;
   if (e.code === 'Space') { e.preventDefault(); ctl.shield(now()); }
+  if (e.code === 'Digit1') mapIndex = 0;
+  if (e.code === 'Digit2') mapIndex = 1;
+  if (e.code === 'Digit3') mapIndex = 2;
+  if (e.code === 'KeyO') showDebugOverlay = !showDebugOverlay;
+  if (e.code === 'BracketLeft') warningTimeDisplay = Math.max(0.1, +(warningTimeDisplay - 0.1).toFixed(2));
+  if (e.code === 'BracketRight') warningTimeDisplay = +(warningTimeDisplay + 0.1).toFixed(2);
+  if (e.code === 'Minus') heroSpeed = +(heroSpeed * 0.9).toFixed(3);
+  if (e.code === 'Equal') heroSpeed = +(heroSpeed * 1.1).toFixed(3);
+  if (e.code === 'KeyL') {
+    const header = 't,mode,predictedDir,actualDir,hit';
+    const rows = attackLog.map((r) => `${r.t},${r.mode},${r.predictedDir},${r.actualDir},${r.hit}`);
+    const blob = new Blob([[header, ...rows].join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'attack_log.csv'; a.click();
+    URL.revokeObjectURL(url);
+  }
   if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
     const before = ctl.state.dashUntil; ctl.dash(now());
     if (ctl.state.dashUntil !== before) {
@@ -50,12 +94,64 @@ addEventListener('keydown', (e) => { keys[e.code] = true;
     }
   } });
 addEventListener('keyup', (e) => (keys[e.code] = false));
-const ctx = document.getElementById('c').getContext('2d'), S = 50, OX = 400, OY = 60;
+const canvas = document.getElementById('c'), ctx = canvas.getContext('2d');
+const HERO_PX = 30, BOSS_PX = 45; // on-screen radii in pixels, fixed regardless of window size
+let S, OX, OY, HERO_R;
 const X = (x) => OX + x * S, Z = (z) => OY + z * S; let last = now();
-const HERO_R = 10 / S; // world-unit radius matching the hero's drawn circle (10px)
+function resizeCanvas() {
+  canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+  const roomWidth = 10 * (canvas.width / canvas.height); // room height fixed at 10, width follows aspect ratio
+  cfg.room.minX = -roomWidth / 2; cfg.room.maxX = roomWidth / 2;
+  S = canvas.height / 10; OX = canvas.width / 2; OY = -cfg.room.minZ * S;
+  HERO_R = HERO_PX / S;
+  const roomHeight = cfg.room.maxZ - cfg.room.minZ;
+  FLOOR.cx = (cfg.room.minX + cfg.room.maxX) / 2;
+  FLOOR.cz = cfg.room.minZ + 0.55 * roomHeight;
+  FLOOR.rx = 0.87 * roomWidth / 2;
+  FLOOR.rz = 0.67 * roomHeight / 2;
+}
+addEventListener('resize', resizeCanvas);
+resizeCanvas();
 function clampToArena(p) {
   p.x = Math.min(cfg.room.maxX - HERO_R, Math.max(cfg.room.minX + HERO_R, p.x));
   p.z = Math.min(cfg.room.maxZ - HERO_R, Math.max(cfg.room.minZ + HERO_R, p.z));
+}
+function clampToEllipse(p) {
+  const rx = Math.max(1e-6, FLOOR.rx - HERO_R), rz = Math.max(1e-6, FLOOR.rz - HERO_R);
+  const dx = (p.x - FLOOR.cx) / rx, dz = (p.z - FLOOR.cz) / rz, d = Math.hypot(dx, dz);
+  if (d > 1) { p.x = FLOOR.cx + (dx / d) * rx; p.z = FLOOR.cz + (dz / d) * rz; }
+}
+function clampOutsidePillars(p) {
+  if (mapIndex !== 1) return; // pillars only exist on level 2
+  for (const c of PILLARS) {
+    const dx = p.x - c.cx, dz = p.z - c.cz, dist = Math.hypot(dx, dz), minDist = c.r + HERO_R;
+    if (dist < minDist) {
+      const ang = dist > 1e-6 ? Math.atan2(dz, dx) : 0;
+      p.x = c.cx + Math.cos(ang) * minDist; p.z = c.cz + Math.sin(ang) * minDist;
+    }
+  }
+}
+let heroVel = { x: 0, z: 0 };
+function easeVelocity(target, dt) {
+  const curMag = Math.hypot(heroVel.x, heroVel.z), targetMag = Math.hypot(target.x, target.z);
+  const tau = targetMag > curMag ? 0.09 : 0.07; // ~90ms ease-in, ~70ms ease-out
+  const alpha = 1 - Math.exp(-dt / tau);
+  heroVel.x += (target.x - heroVel.x) * alpha;
+  heroVel.z += (target.z - heroVel.z) * alpha;
+}
+function gestureTargetVel(t) {
+  if (!(gestureMsg && t - gestureRecvAt < 0.5)) return null; // link LOST: no gesture target at all
+  if (gestureZeroSinceT === null) return lastNonzeroGestureVel; // currently moving
+  if (t - gestureZeroSinceT < 0.15) return lastNonzeroGestureVel; // bridging a stop/unclear packet
+  return { x: 0, z: 0 }; // bridge expired, truly stopped
+}
+function gesturePacketStats(t) {
+  while (gesturePacketTimes.length && t - gesturePacketTimes[0] > 2) gesturePacketTimes.shift();
+  const pps = gesturePacketTimes.filter((ts) => t - ts <= 1).length;
+  let maxGap = 0;
+  for (let i = 1; i < gesturePacketTimes.length; i++) maxGap = Math.max(maxGap, gesturePacketTimes[i] - gesturePacketTimes[i - 1]);
+  if (gesturePacketTimes.length) maxGap = Math.max(maxGap, t - gesturePacketTimes[gesturePacketTimes.length - 1]);
+  return { pps, maxGapMs: Math.round(maxGap * 1000) };
 }
 (function frame() {
   const t = now(), dt = t - last; last = t;
@@ -63,31 +159,54 @@ function clampToArena(p) {
   const mlen = Math.hypot(mx, mz);
   if (mlen > 1e-6) lastMoveDir = { x: mx / mlen, z: mz / mlen };
   const gestureFresh = gestureMsg && (t - gestureRecvAt) < 0.5;
-  if (t < ctl.state.dashUntil) { hero.position.x += dashDir.x * 9 * dt; hero.position.z += dashDir.z * 9 * dt; }
-  else if (gestureFresh) { hero.position.x += gestureMsg.vx * 3 * dt; hero.position.z += gestureMsg.vy * 3 * dt; }
-  else { hero.position.x += mx * 3 * dt; hero.position.z += mz * 3 * dt; }
+  const gTarget = gestureTargetVel(t);
+  const targetVel = gTarget ? { x: gTarget.x * heroSpeed, z: gTarget.z * heroSpeed } : { x: mx * heroSpeed, z: mz * heroSpeed };
+  if (t < ctl.state.dashUntil) {
+    hero.position.x += dashDir.x * heroSpeed * 3 * dt; hero.position.z += dashDir.z * heroSpeed * 3 * dt;
+    heroVel = { x: 0, z: 0 }; // so movement eases back in fresh once the dash ends
+  } else {
+    easeVelocity(targetVel, dt);
+    hero.position.x += heroVel.x * dt; hero.position.z += heroVel.z * dt;
+  }
   clampToArena(hero.position);
+  clampToEllipse(hero.position);
+  clampOutsidePillars(hero.position);
   ctl.update(t); const f = ctl.state;
-  ctx.clearRect(0, 0, 800, 560);
+  if (f.phase === 'warning' && prevPhase !== 'warning') { pendingMode = modes[mode]; pendingPredictedDir = predictor.predict().dir; }
+  prevPhase = f.phase;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const mapImg = mapImages[mapIndex];
+  if (mapImg.complete && mapImg.naturalWidth > 0) {
+    ctx.drawImage(mapImg, X(cfg.room.minX), Z(cfg.room.minZ), X(cfg.room.maxX) - X(cfg.room.minX), Z(cfg.room.maxZ) - Z(cfg.room.minZ));
+  }
   if (SHOW_BORDER) {
     ctx.strokeStyle = '#ddd'; ctx.lineWidth = 3;
     ctx.strokeRect(X(cfg.room.minX), Z(cfg.room.minZ), X(cfg.room.maxX) - X(cfg.room.minX), Z(cfg.room.maxZ) - Z(cfg.room.minZ));
   }
   if (f.phase === 'warning' || f.phase === 'laser') {
     const a = Math.atan2(f.aim.z, f.aim.x);
-    ctx.fillStyle = f.phase === 'laser' ? 'rgba(255,60,40,.7)' : 'rgba(255,60,40,.25)';
+    ctx.fillStyle = f.phase === 'laser' ? 'rgba(255,30,0,.85)' : 'rgba(255,140,0,.45)';
     ctx.beginPath(); ctx.moveTo(X(f.boss.x), Z(f.boss.z));
-    ctx.arc(X(f.boss.x), Z(f.boss.z), cfg.range * S, a - cfg.halfAngle, a + cfg.halfAngle); ctx.fill();
+    ctx.arc(X(f.boss.x), Z(f.boss.z), cfg.range * S, a - cfg.halfAngle, a + cfg.halfAngle); ctx.closePath(); ctx.fill();
+    ctx.lineWidth = 14; ctx.strokeStyle = f.phase === 'laser' ? '#fff' : '#ff0'; ctx.stroke();
   }
-  ctx.fillStyle = '#fc5'; ctx.beginPath(); ctx.arc(X(f.boss.x), Z(f.boss.z), 20, 0, 7); ctx.fill();
-  ctx.fillStyle = t < f.shieldUntil ? '#6df' : '#6f6'; ctx.beginPath(); ctx.arc(X(hero.position.x), Z(hero.position.z), 10, 0, 7); ctx.fill();
+  ctx.fillStyle = '#ffaa00'; ctx.beginPath(); ctx.arc(X(f.boss.x), Z(f.boss.z), BOSS_PX, 0, 7); ctx.fill();
+  ctx.fillStyle = t < f.shieldUntil ? '#00ccff' : '#00ff66'; ctx.beginPath(); ctx.arc(X(hero.position.x), Z(hero.position.z), HERO_PX, 0, 7); ctx.fill();
   const p = predictor.predict(); ctx.fillStyle = '#fff'; ctx.font = '14px monospace';
   ctx.fillText(`${f.message} | player ${f.playerHP} boss ${f.bossHP}/3 | mode ${modes[mode]}`, 10, 20);
   ctx.fillText(`predicts ${p.dir} ${(p.confidence * 100).toFixed(0)}% (n=${p.n})`, 10, 40);
   ctx.fillText(`gesture: ${gestureMsg ? gestureMsg.status : 'none'} | link: ${gestureFresh ? 'OK' : 'LOST'}`, 10, 60);
+  const gStats = gesturePacketStats(t);
+  ctx.fillText(`packets/s: ${gStats.pps} | longest gap (2s): ${gStats.maxGapMs}ms`, 10, 80);
+  ctx.fillText(`[ / ] warning: ${warningTimeDisplay.toFixed(1)}s (display only, see notes) | - / = speed: ${heroSpeed.toFixed(2)}`, 10, 100);
   const dashCd = Math.max(0, Math.min(1, (f.dashReadyAt - t) / 1.5));
-  ctx.fillStyle = '#333'; ctx.fillRect(10, 68, 100, 8);
-  ctx.fillStyle = dashCd > 0 ? '#666' : '#9f6'; ctx.fillRect(10, 68, 100 * (1 - dashCd), 8);
+  ctx.fillStyle = '#333'; ctx.fillRect(10, 108, 100, 8);
+  ctx.fillStyle = dashCd > 0 ? '#666' : '#9f6'; ctx.fillRect(10, 108, 100 * (1 - dashCd), 8);
+  if (showDebugOverlay) {
+    ctx.strokeStyle = '#f0f'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.ellipse(X(FLOOR.cx), Z(FLOOR.cz), FLOOR.rx * S, FLOOR.rz * S, 0, 0, 7); ctx.stroke();
+    for (const c of PILLARS) { ctx.beginPath(); ctx.arc(X(c.cx), Z(c.cz), c.r * S, 0, 7); ctx.stroke(); }
+  }
   requestAnimationFrame(frame);
 })();
 </script>
