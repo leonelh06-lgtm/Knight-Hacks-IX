@@ -1,11 +1,13 @@
 <!doctype html><meta charset="utf-8">
-<canvas id="c" width="800" height="560" style="background:#111"></canvas>
+<style>html,body{margin:0;height:100%;overflow:hidden}body{display:flex;align-items:center;justify-content:center;background:#111}</style>
+<canvas id="c" width="800" height="560" style="background:#111;max-width:100vw;max-height:100vh;object-fit:contain"></canvas>
 <script type="module">
 import { createFight } from './fight.js';
 import { DodgePredictor } from './predictor.mjs';
 import { makeAdaptive, makeRandomShift } from './aim.mjs';
 const cfg = { position: { x: 0, z: 0 }, halfAngle: 0.35, range: 7, counter: 0.5,
               room: { minX: -5, maxX: 5, minZ: -1, maxZ: 9 } };
+const SHOW_BORDER = false;
 const hero = { position: { x: 0, z: 5 } }, predictor = new DodgePredictor();
 const modes = ['straight', 'random-shift', 'adaptive']; let mode = 0;
 const fns = [() => null, makeRandomShift(), makeAdaptive(predictor)];
@@ -48,8 +50,13 @@ addEventListener('keydown', (e) => { keys[e.code] = true;
     }
   } });
 addEventListener('keyup', (e) => (keys[e.code] = false));
-const ctx = document.getElementById('c').getContext('2d'), S = 50, OX = 400, OY = 40;
+const ctx = document.getElementById('c').getContext('2d'), S = 50, OX = 400, OY = 60;
 const X = (x) => OX + x * S, Z = (z) => OY + z * S; let last = now();
+const HERO_R = 10 / S; // world-unit radius matching the hero's drawn circle (10px)
+function clampToArena(p) {
+  p.x = Math.min(cfg.room.maxX - HERO_R, Math.max(cfg.room.minX + HERO_R, p.x));
+  p.z = Math.min(cfg.room.maxZ - HERO_R, Math.max(cfg.room.minZ + HERO_R, p.z));
+}
 (function frame() {
   const t = now(), dt = t - last; last = t;
   const mx = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0), mz = (keys.KeyS ? 1 : 0) - (keys.KeyW ? 1 : 0);
@@ -59,8 +66,13 @@ const X = (x) => OX + x * S, Z = (z) => OY + z * S; let last = now();
   if (t < ctl.state.dashUntil) { hero.position.x += dashDir.x * 9 * dt; hero.position.z += dashDir.z * 9 * dt; }
   else if (gestureFresh) { hero.position.x += gestureMsg.vx * 3 * dt; hero.position.z += gestureMsg.vy * 3 * dt; }
   else { hero.position.x += mx * 3 * dt; hero.position.z += mz * 3 * dt; }
+  clampToArena(hero.position);
   ctl.update(t); const f = ctl.state;
   ctx.clearRect(0, 0, 800, 560);
+  if (SHOW_BORDER) {
+    ctx.strokeStyle = '#ddd'; ctx.lineWidth = 3;
+    ctx.strokeRect(X(cfg.room.minX), Z(cfg.room.minZ), X(cfg.room.maxX) - X(cfg.room.minX), Z(cfg.room.maxZ) - Z(cfg.room.minZ));
+  }
   if (f.phase === 'warning' || f.phase === 'laser') {
     const a = Math.atan2(f.aim.z, f.aim.x);
     ctx.fillStyle = f.phase === 'laser' ? 'rgba(255,60,40,.7)' : 'rgba(255,60,40,.25)';
