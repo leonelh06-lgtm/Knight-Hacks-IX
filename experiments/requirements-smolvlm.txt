@@ -4,4 +4,6 @@ transformers>=4.51,<5
 accelerate>=1,<2
 pillow>=10,<13
 num2words>=0.5.14,<1
-opencv-contrib-python>=4.10,<5
+numpy==1.26.4
+opencv-contrib-python==4.11.0.86
+pygame>=2.6,<3

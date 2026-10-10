@@ -273,6 +273,8 @@ projection. Check responsiveness with the intended lighting and future game work
 For the optional Hugging Face model feasibility test, see
 [the SmolVLM2 probe instructions](experiments/README.md). It runs separately from
 the game and records predictions/timings on sampled video images.
+The same model can now control this game with `--detector smolvlm`; see the live
+control setup in those instructions. MediaPipe remains the default detector.
 
 Opening/relaxing fingers and thumb-to-finger touches are prototype input movements,
 not a prescribed rehabilitation program. Select movements appropriate to the player

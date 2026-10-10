@@ -59,6 +59,14 @@ An additional proposed input path is: board camera capture -> robot tracking on 
 
 ## Team
 
+An optional experimental SmolVLM2 detector now uses Hugging Face's locally loaded
+open-source model through PyTorch/CUDA to classify palm-facing gestures directly
+for the existing game. Open palm moves up, fist down, index pinch left, pinkie
+pinch right, unknown stops. It uses separate camera/inference workers and expires
+commands by source-image age; no landmark calibration is used. MediaPipe remains
+the default. Gesture accuracy and live Jetson latency require hardware validation.
+Setup: `experiments/README.md`; game flag: `--detector smolvlm`.
+
 | Member | Current responsibility |
 | --- | --- |
 | Leo | Jetson implementation, including the device setup and deployment work |
