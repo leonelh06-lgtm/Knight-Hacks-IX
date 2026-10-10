@@ -9,3 +9,5 @@ recordings/
 .env.*
 .test-deps/
 demo.png
+node_modules/
+.claude/

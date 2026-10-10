@@ -1,0 +1,81 @@
+<!doctype html><meta charset="utf-8">
+<canvas id="c" width="800" height="560" style="background:#111"></canvas>
+<script type="module">
+import { createFight } from './fight.js';
+import { DodgePredictor } from './predictor.mjs';
+import { makeAdaptive, makeRandomShift } from './aim.mjs';
+const cfg = { position: { x: 0, z: 0 }, halfAngle: 0.35, range: 7, counter: 0.5,
+              room: { minX: -5, maxX: 5, minZ: -1, maxZ: 9 } };
+const hero = { position: { x: 0, z: 5 } }, predictor = new DodgePredictor();
+const modes = ['straight', 'random-shift', 'adaptive']; let mode = 0;
+const fns = [() => null, makeRandomShift(), makeAdaptive(predictor)];
+const ctl = createFight(cfg, hero, {
+  chooseAim: (b, p) => fns[mode](b, p),
+  onResolve: (e) => { predictor.observe({ x: e.p0.x, y: e.p0.z }, { x: e.p1.x, y: e.p1.z }, { x: e.aim.x, y: e.aim.z }); console.log(JSON.stringify(e)); },
+});
+const keys = {}, now = () => performance.now() / 1000;
+let lastMoveDir = { x: 0, z: 0 }, dashDir = { x: 0, z: 1 };
+let lastGestureDir = { x: 0, z: 0 }, gestureMsg = null, gestureRecvAt = -1e9;
+let ws = null;
+function connectGestureWS() {
+  ws = new WebSocket('ws://localhost:8765');
+  ws.addEventListener('message', (ev) => {
+    let m; try { m = JSON.parse(ev.data); } catch { return; }
+    if (!Number.isFinite(m.vx) || !Number.isFinite(m.vy)) return;
+    gestureMsg = m; gestureRecvAt = now();
+    const glen = Math.hypot(m.vx, m.vy);
+    if (glen > 1e-6) lastGestureDir = { x: m.vx / glen, z: m.vy / glen };
+  });
+  ws.addEventListener('close', () => setTimeout(connectGestureWS, 500));
+  ws.addEventListener('error', () => ws.close());
+}
+connectGestureWS();
+addEventListener('keydown', (e) => { keys[e.code] = true;
+  if (e.code === 'KeyB') ctl.start(now()); if (e.code === 'KeyR') ctl.reset();
+  if (e.code === 'KeyM') mode = (mode + 1) % 3;
+  if (e.code === 'Space') { e.preventDefault(); ctl.shield(now()); }
+  if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+    const before = ctl.state.dashUntil; ctl.dash(now());
+    if (ctl.state.dashUntil !== before) {
+      const glen = Math.hypot(lastGestureDir.x, lastGestureDir.z);
+      if (glen > 1e-6) dashDir = { x: lastGestureDir.x / glen, z: lastGestureDir.z / glen };
+      else {
+        const len = Math.hypot(lastMoveDir.x, lastMoveDir.z);
+        if (len > 1e-6) dashDir = { x: lastMoveDir.x / len, z: lastMoveDir.z / len };
+        else { const dx = hero.position.x - ctl.state.boss.x, dz = hero.position.z - ctl.state.boss.z, d = Math.hypot(dx, dz) || 1;
+          dashDir = { x: dx / d, z: dz / d }; }
+      }
+    }
+  } });
+addEventListener('keyup', (e) => (keys[e.code] = false));
+const ctx = document.getElementById('c').getContext('2d'), S = 50, OX = 400, OY = 40;
+const X = (x) => OX + x * S, Z = (z) => OY + z * S; let last = now();
+(function frame() {
+  const t = now(), dt = t - last; last = t;
+  const mx = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0), mz = (keys.KeyS ? 1 : 0) - (keys.KeyW ? 1 : 0);
+  const mlen = Math.hypot(mx, mz);
+  if (mlen > 1e-6) lastMoveDir = { x: mx / mlen, z: mz / mlen };
+  const gestureFresh = gestureMsg && (t - gestureRecvAt) < 0.5;
+  if (t < ctl.state.dashUntil) { hero.position.x += dashDir.x * 9 * dt; hero.position.z += dashDir.z * 9 * dt; }
+  else if (gestureFresh) { hero.position.x += gestureMsg.vx * 3 * dt; hero.position.z += gestureMsg.vy * 3 * dt; }
+  else { hero.position.x += mx * 3 * dt; hero.position.z += mz * 3 * dt; }
+  ctl.update(t); const f = ctl.state;
+  ctx.clearRect(0, 0, 800, 560);
+  if (f.phase === 'warning' || f.phase === 'laser') {
+    const a = Math.atan2(f.aim.z, f.aim.x);
+    ctx.fillStyle = f.phase === 'laser' ? 'rgba(255,60,40,.7)' : 'rgba(255,60,40,.25)';
+    ctx.beginPath(); ctx.moveTo(X(f.boss.x), Z(f.boss.z));
+    ctx.arc(X(f.boss.x), Z(f.boss.z), cfg.range * S, a - cfg.halfAngle, a + cfg.halfAngle); ctx.fill();
+  }
+  ctx.fillStyle = '#fc5'; ctx.beginPath(); ctx.arc(X(f.boss.x), Z(f.boss.z), 20, 0, 7); ctx.fill();
+  ctx.fillStyle = t < f.shieldUntil ? '#6df' : '#6f6'; ctx.beginPath(); ctx.arc(X(hero.position.x), Z(hero.position.z), 10, 0, 7); ctx.fill();
+  const p = predictor.predict(); ctx.fillStyle = '#fff'; ctx.font = '14px monospace';
+  ctx.fillText(`${f.message} | player ${f.playerHP} boss ${f.bossHP}/3 | mode ${modes[mode]}`, 10, 20);
+  ctx.fillText(`predicts ${p.dir} ${(p.confidence * 100).toFixed(0)}% (n=${p.n})`, 10, 40);
+  ctx.fillText(`gesture: ${gestureMsg ? gestureMsg.status : 'none'} | link: ${gestureFresh ? 'OK' : 'LOST'}`, 10, 60);
+  const dashCd = Math.max(0, Math.min(1, (f.dashReadyAt - t) / 1.5));
+  ctx.fillStyle = '#333'; ctx.fillRect(10, 68, 100, 8);
+  ctx.fillStyle = dashCd > 0 ? '#666' : '#9f6'; ctx.fillRect(10, 68, 100 * (1 - dashCd), 8);
+  requestAnimationFrame(frame);
+})();
+</script>
