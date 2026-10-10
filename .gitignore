@@ -4,7 +4,6 @@ __pycache__/
 *.py[cod]
 models/
 calibration.json
-recordings/
 .env
 .env.*
 .test-deps/
