@@ -1,5 +1,4 @@
 .venv/
-.venv-smolvlm/
 venv/
 __pycache__/
 *.py[cod]
