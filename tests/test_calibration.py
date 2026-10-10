@@ -5,28 +5,22 @@ from gesture_control.controls import Observation
 
 
 class CalibrationTests(unittest.TestCase):
-    def test_builds_personal_up_direction_and_opening(self):
+    def test_builds_personal_opening_without_direction_calibration(self):
         neutral = [Observation(.5, .5, .5, (1, 1, 1, 1))] * 20
         relaxed = [Observation(.5, .5, .3, (1, 1, 1, 1))] * 20
         opened = [Observation(.5, .5, .8, (1, 1, 1, 1))] * 20
-        left = [Observation(.5, .5, .5, (1, 1, 1, 1), -math.pi / 2 - .4)] * 20
-        right = [Observation(.5, .5, .5, (1, 1, 1, 1), -math.pi / 2 + .3)] * 20
-        cal = build_calibration([neutral, relaxed, opened, left, right])
-        self.assertAlmostEqual(cal.heading_offset, 0)
+        cal = build_calibration([neutral, relaxed, opened])
         self.assertEqual(cal.closed, .3)
         self.assertEqual(cal.neutral_opening, .5)
-        self.assertAlmostEqual(cal.left_range, .4)
-        self.assertAlmostEqual(cal.right_range, .3)
 
     def test_insufficient_tracking_samples_are_rejected(self):
         with self.assertRaises(ValueError):
-            build_calibration([[], [], [], [], []])
+            build_calibration([[], [], []])
 
     def test_bad_neutral_identifies_only_neutral_step(self):
         def group(opening, heading=-math.pi / 2):
             return [Observation(.5, .5, opening, (1, 1, 1, 1), heading)] * 20
-        groups = [group(.8), group(.3), group(.8), group(.5, -math.pi / 2 - .4),
-                  group(.5, -math.pi / 2 + .3)]
+        groups = [group(.8), group(.3), group(.8)]
         with self.assertRaises(CalibrationError) as raised:
             build_calibration(groups)
         self.assertEqual(raised.exception.step, 0)
@@ -34,11 +28,11 @@ class CalibrationTests(unittest.TestCase):
     def test_retry_keeps_good_recordings_and_finishes_after_one_replacement(self):
         wizard = Wizard()
         sample = Observation(.5, .5, .5, (1, 1, 1, 1))
-        wizard.groups = [[sample] * 20 for _ in range(5)]
+        wizard.groups = [[sample] * 20 for _ in range(3)]
         preserved = wizard.groups[0]
-        wizard.retry_step(4)
+        wizard.retry_step(2)
         self.assertIs(wizard.groups[0], preserved)
-        self.assertEqual(wizard.step, 4)
+        self.assertEqual(wizard.step, 2)
         wizard.start_step(10)
         for index in range(20):
             wizard.update(11 + index * .1, sample, True)

@@ -1,4 +1,4 @@
-"""Camera and CPU inference worker; rendering never waits on camera reads."""
+"""Camera and CPU/GPU inference worker; rendering never waits on camera reads."""
 
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -33,13 +33,34 @@ def open_camera(camera, backend='auto'):
     return cap
 
 
+def create_detector(model, hand, inference_device):
+    import mediapipe as mp
+    from mediapipe.tasks.python import vision
+    delegate = (mp.tasks.BaseOptions.Delegate.GPU if inference_device == 'gpu'
+                else mp.tasks.BaseOptions.Delegate.CPU)
+    options = vision.HandLandmarkerOptions(
+        base_options=mp.tasks.BaseOptions(model_asset_path=str(model), delegate=delegate),
+        running_mode=vision.RunningMode.VIDEO,
+        num_hands=1 if hand == 'any' else 2,
+        min_hand_detection_confidence=.6,
+        min_hand_presence_confidence=.6,
+        min_tracking_confidence=.6)
+    try:
+        return vision.HandLandmarker.create_from_options(options)
+    except Exception as error:
+        raise RuntimeError(f'{inference_device.upper()} model initialization failed (no CPU fallback): {error}') from error
+
+
 class Tracker:
     def __init__(self, model, camera=0, hand='any', mirror=False,
-                 backend='auto', startup_timeout=30):
+                 backend='auto', startup_timeout=30, inference_device='cpu'):
         self.model = Path(model)
         self.camera = camera
         self.hand = hand
         self.mirror = mirror
+        if inference_device not in ('cpu', 'gpu'):
+            raise ValueError('Inference device must be cpu or gpu.')
+        self.inference_device = inference_device
         if backend not in BACKENDS or startup_timeout <= 0:
             raise ValueError('Invalid camera backend or startup timeout.')
         self.backend = backend
@@ -90,17 +111,8 @@ class Tracker:
                                    frame=cv2.cvtColor(first_frame, cv2.COLOR_BGR2RGB),
                                    phase='Loading hand model'))
             import mediapipe as mp
-            from mediapipe.tasks.python import vision
-            options = vision.HandLandmarkerOptions(
-                base_options=mp.tasks.BaseOptions(model_asset_path=str(self.model),
-                                                 delegate=mp.tasks.BaseOptions.Delegate.CPU),
-                running_mode=vision.RunningMode.VIDEO,
-                num_hands=1 if self.hand == 'any' else 2,
-                min_hand_detection_confidence=.6,
-                min_hand_presence_confidence=.6,
-                min_tracking_confidence=.6)
             last_ms = -1
-            with vision.HandLandmarker.create_from_options(options) as detector:
+            with create_detector(self.model, self.hand, self.inference_device) as detector:
                 while not self._stop.is_set():
                     # Timestamp BEFORE read: a stalled read cannot yield a fresh-looking command.
                     captured = time.monotonic()
@@ -131,7 +143,7 @@ class Tracker:
                         break
                     self._publish(Snapshot(captured, observation, rgb, points, inference_ms, phase='Tracking'))
         except Exception as error:
-            self._publish(Snapshot(error=f'{type(error).__name__}: {error}'))
+            self._publish(Snapshot(error=f'{self.inference_device.upper()} tracking failed: {type(error).__name__}: {error}'))
         finally:
             if cap is not None:
                 cap.release()

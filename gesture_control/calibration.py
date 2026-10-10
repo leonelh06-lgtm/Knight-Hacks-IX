@@ -1,15 +1,12 @@
-"""Personal top-down direction and opening calibration."""
+"""Personal palm-facing opening calibration."""
 
 from statistics import median
-import math
 from .controls import Calibration
 
 STEPS = (
-    'Point straight ahead with fingers partly relaxed: this is STOP',
+    'Face your palm toward the camera with fingers partly relaxed: STOP',
     'Close your fingers into a comfortable fist (do not force it)',
     'Open your fingers as far as comfortably possible',
-    'Tilt your hand comfortably LEFT; hold that angle',
-    'Tilt your hand comfortably RIGHT; hold that angle',
 )
 
 MIN_SAMPLES = 15
@@ -25,22 +22,13 @@ class CalibrationError(ValueError):
 
 def build_calibration(groups):
     if len(groups) != len(STEPS):
-        raise CalibrationError(0, 'Calibration requires all five poses.')
+        raise CalibrationError(0, 'Calibration requires all three poses.')
     for index, group in enumerate(groups):
         if len(group) < MIN_SAMPLES:
             raise CalibrationError(index, 'Too few tracked samples. Keep the entire hand visible and retry this step.')
         if any(not sample.valid() for sample in group):
             raise CalibrationError(index, 'Invalid tracking samples. Retry this step with the hand clearly visible.')
-    neutral, relaxed, opened, left, right = groups
-    cosine = sum(math.cos(sample.heading) for sample in neutral) / len(neutral)
-    sine = sum(math.sin(sample.heading) for sample in neutral) / len(neutral)
-    if math.hypot(cosine, sine) < .9:
-        raise CalibrationError(0, 'Neutral direction was not steady. Hold the wrist still, pointing straight ahead.')
-    neutral_heading = math.atan2(sine, cosine)
-    def tilt_range(samples, sign):
-        angles = [math.atan2(math.sin(sample.heading - neutral_heading),
-                            math.cos(sample.heading - neutral_heading)) for sample in samples]
-        return sign * median(angles)
+    neutral, relaxed, opened = groups
     closed_value = median(sample.opening for sample in relaxed)
     opened_value = median(sample.opening for sample in opened)
     neutral_value = median(sample.opening for sample in neutral)
@@ -50,13 +38,7 @@ def build_calibration(groups):
     if not closed_value + .04 <= neutral_value <= opened_value - .04:
         raise CalibrationError(0, f'Neutral fingers must be partly relaxed, between fist and open '
                                f'(neutral {neutral_value:.2f}, fist {closed_value:.2f}, open {opened_value:.2f}).')
-    left_value, right_value = tilt_range(left, -1), tilt_range(right, 1)
-    for index, value, name in ((3, left_value, 'LEFT'), (4, right_value, 'RIGHT')):
-        if not math.radians(8) <= value <= math.pi / 2:
-            raise CalibrationError(index, f'{name} tilt measured {math.degrees(value):.0f} degrees. '
-                                   f'Hold a comfortable {name.lower()} angle 8-90 degrees from neutral.')
-    return Calibration(-math.pi / 2 - neutral_heading, closed_value, opened_value,
-                       neutral_value, left_value, right_value)
+    return Calibration(closed_value, opened_value, neutral_value)
 
 
 class Wizard:

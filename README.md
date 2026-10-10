@@ -2,18 +2,38 @@
 
 A local Python hand-control prototype for the project in [CONTEXT.md](CONTEXT.md).
 MediaPipe detects hand landmarks; adjustable control logic moves a character inside
-a top-down forest arena. Both hands are supported. Default input uses **top-down hand
-tilt for left/right, open hand for up, and closed fist for down**. A partially relaxed
-hand at neutral stops movement. A second mode uses thumb-to-finger
+a top-down forest arena. Both hands are supported. The hand faces the camera, palm
+out. Default controls use **open hand for up, fist for down, index-thumb pinch for
+left, and pinkie-thumb pinch for right**. A partially relaxed hand stops movement.
+A second mode uses four thumb-to-finger
 touches. Robot tracking and enemy collision are future integration work.
 
 ## Jetson setup
 
 Target supplied by the team: Orin Nano, JetPack 7.2.1-b49, Python 3.12.3,
 Linux aarch64, glibc 2.39. This repository has not yet been tested on that device.
-MediaPipe 1.1.0 has a Linux ARM64 wheel. Inference explicitly uses the CPU;
-CUDA acceleration is not assumed. Package installation and camera performance
+MediaPipe 1.1.0 has a Linux ARM64 wheel. CPU is the default; `--inference-device gpu`
+explicitly selects MediaPipe's GPU delegate. Package installation and camera performance
 must be verified on the Jetson.
+
+### GPU inference on the Jetson
+
+The team successfully tested GPU model initialization and blank-frame inference on
+their Jetson. To use that delegate in the actual program:
+
+```bash
+source .venv/bin/activate
+python -m gesture_control --inference-device gpu --camera 0 --hand any
+```
+
+The sidebar displays the selected CPU/GPU delegate and inference time. Compare the
+same camera setup using `--inference-device cpu`. Simulated input is explicitly
+labeled SIMULATED and does not test either delegate. GPU errors stop the program
+and are reported in the terminal; there is no application-level CPU fallback.
+MediaPipe may still run some pipeline operations on CPU. This option uses
+MediaPipe's GPU delegate, not TensorRT; it does not promise that every operation
+uses CUDA or that inference will be faster. Camera capture, gesture rules, and
+calibration remain shared. No recalibration is required solely to switch delegates.
 
 Run from the repository root in the Jetson desktop terminal:
 
@@ -72,33 +92,27 @@ a startup timeout after 30 seconds. `--camera-timeout` changes that limit.
 
 ## Calibration and playing
 
-Mount the camera **above the hand, looking straight down at the back of the hand**.
-Keep the wrist, knuckles, and fingertips visible, with the forearm supported on the
-board/table where comfortable. Rotate the hand within the board plane to point in
-different directions. The camera mount must be repositioned physically; software
-cannot turn a front-facing camera into an overhead view. Keep the camera fixed after
-calibration, and use even lighting without strong projector glare or shadows.
+Place the camera **in front of the hand with the palm facing the lens**. Keep the
+wrist, thumb, and all fingertips visible. Support the forearm where comfortable.
+No wrist rotation or movement across the image is required. Keep the camera fixed
+after calibration and use even lighting without strong projector glare or shadows.
 
 1. Press **C**. For each step, read the instruction and press **Enter** when ready.
-2. Point straight ahead with your fingers **partially relaxed**: this is the neutral STOP pose.
+2. Face your palm toward the camera with fingers **partially relaxed**: this is STOP.
 3. Close your fingers into a comfortable fist; do not force a tight grip.
 4. Open your fingers comfortably.
-5. Hold a comfortable left tilt.
-6. Hold a comfortable right tilt.
 
-There are now **five steps**, each with a one-second preparation period and three
-seconds of recording (20 seconds total, plus time between steps). Insufficient tracking
+There are now **three steps**, each with a one-second preparation period and three
+seconds of recording (12 seconds total, plus time between steps). Insufficient tracking
 extends a step up to 12 seconds to collect 15 tracked samples. If that still fails,
 the step waits for an explicit Enter retry and shows the reason in the central panel.
 Final validation identifies the failed pose and preserves all other recordings;
-it does not automatically restart all five steps. Press C only to start over.
+it does not automatically restart all three steps. Press C only to start over.
 Calibration is saved locally to `calibration.json` and excluded from Git. Recalibrate
 for a different player, camera angle, distance, or setup. Changing `--hand` or
 mirroring settings also requires recalibration.
-Older calibration profiles are rejected; press C to record the new postures and tilts.
-Neutral finger opening must be distinguishable from both fist and open hand. Each
-recorded tilt must be 8–90 degrees from neutral; movement activates at half the
-recorded angle and releases at a lower threshold to reduce flicker.
+Older calibration profiles are rejected; press C to record the new postures.
+Relaxed finger opening must be distinguishable from both fist and open hand.
 
 Click the game window so it has keyboard focus. Tap Enter once per step; do not
 hold it. Both the main Enter key and numeric-keypad Enter are supported. The central
@@ -106,31 +120,35 @@ calibration panel shows a countdown and the number of tracked samples. If the
 countdown runs but samples remain at zero, check the hand selection, camera view,
 and frame-age display. The window fits the desktop and can be resized.
 
-In **movement mode**, the wrist-to-knuckle vector measures left/right tilt relative
-to the recorded neutral heading. Hand position in the camera image is ignored.
+In **movement mode**, finger posture and thumb-to-fingertip distances select the
+direction. Hand position and orientation in the camera image are ignored.
 
 | Pose | Movement |
 | --- | --- |
-| Open hand, neutral angle | Up |
-| Closed fist, neutral angle | Down |
-| Left tilt, with any finger posture | Left |
-| Right tilt, with any finger posture | Right |
-| Partially relaxed fingers at neutral angle | Stop |
+| Open palm | Up |
+| Closed fist | Down |
+| Index finger touches thumb, other fingers reasonably open | Left |
+| Pinkie touches thumb, other fingers reasonably open | Right |
+| Partially relaxed fingers, or ambiguous pose | Stop |
+| Both index and pinkie pinches detected | Stop |
 | Tracking lost or Space pressed | Stop |
 
-Tilt takes priority over opening and closing. Commands select one cardinal
-direction at a time; there is no diagonal movement in this mapping. Closing the
-hand now means **down**, so use relaxed neutral or Space to stop. Opening thresholds
-are derived from all three recorded postures. Circular angle smoothing and
-hysteresis reduce jitter. Relaxed neutral stops immediately without a smoothing tail.
-The player's arrow shows the actual movement command; the camera preview shows
-the wrist-to-knuckle line used to estimate tilt.
+The program checks for a fist before pinch distance: a fist can naturally bring
+the thumb close to fingertips. For a left/right pinch, keep at least two other
+fingers reasonably open. Ambiguous pinches stop instead of choosing a direction.
+Commands select one cardinal direction at a time; there is no diagonal movement.
+Closing means **down**, so use partially relaxed fingers or Space to stop. Opening
+thresholds are derived from all three recorded postures. Relaxed/unclear poses stop
+immediately without a smoothing tail. The player's arrow shows the actual command.
+The camera preview connects the thumb to the index/pinkie tips; yellow lines indicate
+distance below the pinch threshold. The sidebar displays those normalized distances.
+Use `--pinch-threshold` to adjust touch sensitivity (default `0.28`, relative to palm length).
 Camera frames older
 than 350 ms or a missing hand stop movement immediately at the next rendering frame.
 With slow inference, the prototype deliberately stops rather than accepting stale
 commands. The sidebar displays inference time and frame age for troubleshooting.
 
-In **pinch mode**, touch your thumb to index (left), middle (up), ring (right),
+The optional legacy **pinch mode** differs from the new default: touch your thumb to index (left), middle (up), ring (right),
 or little finger (down). Release to stop. The nearest qualifying fingertip wins
 if multiple touches are detected. Pinch distance is normalized by palm length;
 `--pinch-threshold` adjusts sensitivity (default `0.28`). Personal pinch calibration
@@ -155,7 +173,7 @@ python -m gesture_control --fullscreen --no-preview --speed 120
 python -m gesture_control --simulate
 ```
 
-Camera input is **unmirrored by default** for the overhead view. `--mirror` flips it
+Camera input is **unmirrored by default**. `--mirror` flips it
 horizontally; `--no-mirror` explicitly selects the default. Recalibrate after changing
 that setting. `--hand any` assumes exactly one
 person's hand is in view; select left/right to reduce unwanted input switching.
@@ -201,10 +219,9 @@ projection. Check responsiveness with the intended lighting and future game work
 
 Opening/relaxing fingers and thumb-to-finger touches are prototype input movements,
 not a prescribed rehabilitation program. Select movements appropriate to the player
-with rehabilitation expertise. Steering estimates the hand's direction in the board
-plane, rather than measuring a wrist joint angle or forearm palm-up/palm-down rotation.
-Moving the forearm can also change the detected direction, so the program cannot
-confirm that movement was isolated to the wrist. Opening is an average finger-bend estimate, and
+with rehabilitation expertise. The default controls classify finger posture and
+pinch distances, rather than measuring wrist rotation. Opening uses estimated
+finger bend angles, and
 pinch is a landmark-distance estimate. Neither measures grip strength or establishes
 clinical progress. Keep movements comfortable and use pause/rest as needed.
 

@@ -24,6 +24,8 @@ def parse_args():
     parser.add_argument('--camera-backend', choices=tuple(BACKENDS), default='auto')
     parser.add_argument('--camera-timeout', type=float, default=30, help='Camera/model startup timeout in seconds')
     parser.add_argument('--model', default='models/hand_landmarker.task')
+    parser.add_argument('--inference-device', choices=('cpu', 'gpu'), default='cpu',
+                        help='MediaPipe inference delegate (GPU requires a supported build/driver)')
     parser.add_argument('--mode', choices=('movement', 'pinch'), default='movement')
     parser.add_argument('--hand', choices=('any', 'left', 'right'), default='any')
     mirror_options = parser.add_mutually_exclusive_group()
@@ -73,13 +75,13 @@ def main():
     profile = Path(args.profile)
     note = 'Press C to calibrate your comfortable movement.'
     if args.simulate:
-        controller.calibration = Calibration(0, .2, .9)
+        controller.calibration = Calibration(.2, .9)
         note = 'SIMULATED INPUT - hardware is not being tested.'
     elif profile.is_file():
         try:
             data = json.loads(profile.read_text(encoding='utf-8'))
-            if data.get('version') != 3:
-                raise ValueError('Older control profile; press C to calibrate neutral, fist, open, and tilts.')
+            if data.get('version') != 4:
+                raise ValueError('Older control profile; press C for relaxed, fist, open calibration.')
             if data['hand'] != args.hand or data['mirror'] != args.mirror:
                 raise ValueError('Hand or mirror setting changed; recalibrate.')
             controller.calibration = Calibration(**data['calibration'])
@@ -91,7 +93,8 @@ def main():
     if not args.simulate:
         camera = int(args.camera) if args.camera.isdecimal() else args.camera
         tracker = Tracker(args.model, camera, args.hand, args.mirror,
-                          backend=args.camera_backend, startup_timeout=args.camera_timeout)
+                          backend=args.camera_backend, startup_timeout=args.camera_timeout,
+                          inference_device=args.inference_device)
         tracker.start()
     rng = random.Random(7)
     trees = [(rng.randrange(25, ARENA[0] - 25), rng.randrange(25, ARENA[1] - 25), rng.randrange(16, 28))
@@ -141,9 +144,16 @@ def main():
                         command = controller.stop('Reset')
                         last_stamp = 0
             if args.simulate:
-                angle = -math.pi / 2 + .6 * math.cos(frame_count / 50)
-                opening = (.95, .2, .55)[(frame_count // 120) % 3]
-                snapshot = Snapshot(now, Observation(.5, .5, opening, (.1, 1, 1, 1), angle), phase='Tracking')
+                gestures = (
+                    (.75, (1, 1, 1, .1), (.9, .9, .9, .3)),
+                    (.95, (1, 1, 1, 1), (.95,) * 4),
+                    (.2, (.1, .1, .1, .1), (.2,) * 4),
+                    (.75, (.1, 1, 1, 1), (.3, .9, .9, .9)),
+                    (.55, (1, 1, 1, 1), (.55,) * 4),
+                )
+                opening, pinches, fingers = gestures[(frame_count // 120) % len(gestures)]
+                snapshot = Snapshot(now, Observation(.5, .5, opening, pinches,
+                                    finger_openings=fingers), phase='Tracking')
             else:
                 snapshot = tracker.latest()
             fresh = snapshot.timestamp != last_stamp
@@ -157,10 +167,10 @@ def main():
                     if not paused and wizard.update(now, observation, fresh):
                         controller.calibration = build_calibration(wizard.groups)
                         profile.parent.mkdir(parents=True, exist_ok=True)
-                        profile.write_text(json.dumps({'version': 3, 'hand': args.hand, 'mirror': args.mirror,
+                        profile.write_text(json.dumps({'version': 4, 'hand': args.hand, 'mirror': args.mirror,
                                            'calibration': asdict(controller.calibration)}, indent=2), encoding='utf-8')
                         wizard = None
-                        note = 'Open: up | Fist: down | Tilt: left/right | Relaxed neutral: stop'
+                        note = 'Open: up | Fist: down | Index pinch: left | Pinkie pinch: right | Relaxed: stop'
                 except CalibrationError as error:
                     note = str(error)
                     wizard.retry_step(error.step)
@@ -208,7 +218,7 @@ def main():
             def text(message, x, y, heading=False, color=(213, 233, 221)):
                 canvas.blit((title_font if heading else font).render(message, True, color), (x, y))
             text('FOREST MOTION', 22, 23, True)
-            text('Top-down hand control prototype', 390, 30)
+            text('Palm-facing hand control', 390, 30)
             text(controller.mode.upper() + ' MODE', 795, 80, True)
             text(f'Camera {args.camera} ({args.camera_backend})', 795, 113)
             if not args.no_preview and snapshot.frame is not None:
@@ -219,12 +229,14 @@ def main():
                         pygame.draw.circle(preview, (130, 255, 210),
                                            (int(x * rgb.shape[1]), int(y * rgb.shape[0])), 4)
                     if len(snapshot.points) == 21:
-                        wrist = snapshot.points[0]
-                        knuckles = tuple(sum(snapshot.points[i][axis] for i in (5, 9, 13, 17)) / 4
-                                         for axis in (0, 1))
-                        pygame.draw.line(preview, (255, 220, 80),
-                            (int(wrist[0] * rgb.shape[1]), int(wrist[1] * rgb.shape[0])),
-                            (int(knuckles[0] * rgb.shape[1]), int(knuckles[1] * rgb.shape[0])), 5)
+                        thumb = snapshot.points[4]
+                        for finger_index, tip_index in ((0, 8), (3, 20)):
+                            tip = snapshot.points[tip_index]
+                            touching = snapshot.observation is not None and snapshot.observation.pinches[finger_index] < args.pinch_threshold
+                            color = (255, 220, 80) if touching else (100, 150, 160)
+                            pygame.draw.line(preview, color,
+                                (int(thumb[0] * rgb.shape[1]), int(thumb[1] * rgb.shape[0])),
+                                (int(tip[0] * rgb.shape[1]), int(tip[1] * rgb.shape[0])), 3)
                     preview = pygame.transform.smoothscale(preview, (300, 225))
                     preview_stamp = snapshot.timestamp
                 if preview is not None:
@@ -232,18 +244,20 @@ def main():
             if not args.simulate and snapshot.phase != 'Tracking':
                 pygame.draw.rect(canvas, (12, 22, 27), (795, 130, 300, 30))
                 text(snapshot.phase + '...', 800, 135)
-            text(f'Inference: {snapshot.inference_ms:.0f} ms', 795, 372)
+            device_label = 'SIMULATED' if args.simulate else args.inference_device.upper()
+            text(f'{device_label} inference: {snapshot.inference_ms:.0f} ms', 795, 372)
             text(f'Frame age: {min(age, 99):.2f} s', 795, 399)
             if observation:
                 text(f'Opening estimate: {observation.opening:.2f}', 795, 426)
+                text(f'Pinches I:{observation.pinches[0]:.2f} P:{observation.pinches[3]:.2f}', 795, 449)
             text('C  Calibrate    Enter  Record step', 795, 470)
             text('M  Switch control mode', 795, 501)
             text('Space  Pause / resume', 795, 532)
             text('R  Reset player    Q / Esc  Exit', 795, 563)
             if controller.mode == 'movement':
                 text('Open: UP     Fist: DOWN', 795, 603)
-                text('Tilt left / right: LEFT / RIGHT', 795, 630)
-                text('Relaxed + centered: STOP', 795, 657)
+                text('Index: LEFT     Pinkie: RIGHT', 795, 630)
+                text('Relaxed / unclear: STOP', 795, 657)
             else:
                 text('Pinch: index left / middle up', 795, 603)
                 text('Ring right / little finger down', 795, 630)

@@ -11,34 +11,33 @@ class Observation:
     opening: float
     pinches: tuple[float, float, float, float]
     heading: float = -math.pi / 2
+    finger_openings: tuple[float, float, float, float] | None = None
 
     def valid(self):
         values = (self.x, self.y, self.opening, self.heading, *self.pinches)
+        if self.finger_openings is not None:
+            if len(self.finger_openings) != 4:
+                return False
+            values += self.finger_openings
         return len(self.pinches) == 4 and all(math.isfinite(v) for v in values)
 
 
 @dataclass(frozen=True)
 class Calibration:
-    heading_offset: float
     closed: float
     opened: float
     neutral_opening: float | None = None
-    left_range: float = math.pi / 6
-    right_range: float = math.pi / 6
 
     def __post_init__(self):
         if self.neutral_opening is None:
             object.__setattr__(self, 'neutral_opening', (self.closed + self.opened) / 2)
-        values = (self.heading_offset, self.closed, self.opened, self.neutral_opening,
-                  self.left_range, self.right_range)
+        values = (self.closed, self.opened, self.neutral_opening)
         if not all(math.isfinite(v) for v in values):
             raise ValueError('Calibration values must be finite.')
         if not 0 <= self.closed < self.opened <= 1 or self.opened - self.closed < 0.08:
             raise ValueError('Opening and relaxing were too similar. Retry within a comfortable range.')
         if not self.closed + .04 <= self.neutral_opening <= self.opened - .04:
             raise ValueError('Relaxed neutral must be between fist and open hand. Recalibrate with three distinct postures.')
-        if not math.radians(8) <= min(self.left_range, self.right_range) or max(self.left_range, self.right_range) > math.pi / 2:
-            raise ValueError('Left and right tilts must be between 8 and 90 degrees from neutral.')
 
 
 @dataclass(frozen=True)
@@ -61,13 +60,11 @@ class Controller:
         self.pinch_threshold = pinch_threshold
         self._velocity = (0.0, 0.0)
         self._active = False
-        self._heading = None
         self._direction = None
 
     def stop(self, reason='Paused'):
         self._velocity = (0.0, 0.0)
         self._active = False
-        self._heading = None
         self._direction = None
         return Command(self._velocity, reason)
 
@@ -85,36 +82,32 @@ class Controller:
             self._active = True
         else:
             cal = self.calibration
-            heading = observation.heading + cal.heading_offset
-            raw_tilt = math.atan2(math.sin(heading + math.pi / 2), math.cos(heading + math.pi / 2))
             low = (cal.closed + cal.neutral_opening) / 2
             high = (cal.opened + cal.neutral_opening) / 2
-            # Relaxed and centered is an immediate stop, even with smoothing.
-            if -cal.left_range * .5 < raw_tilt < cal.right_range * .5 and low < observation.opening < high:
-                return self.stop('Relaxed neutral: stopped')
-            if self._heading is None:
-                self._heading = heading
+            fingers = observation.finger_openings or (observation.opening,) * 4
+            # A fist naturally brings thumb and fingertips together. Check all
+            # fingers before pinch distances to avoid interpreting it as steering.
+            if observation.opening <= low and all(value <= low for value in fingers):
+                direction, velocity, status = 'down', (0, 1), 'Closed fist: moving down'
             else:
-                # Smooth around the circle: +179 to -179 is a 2 degree turn.
-                difference = math.atan2(math.sin(heading - self._heading),
-                                        math.cos(heading - self._heading))
-                self._heading += self.smoothing * difference
-            tilt = math.atan2(math.sin(self._heading + math.pi / 2), math.cos(self._heading + math.pi / 2))
-            left_threshold = cal.left_range * (.35 if self._direction == 'left' else .5)
-            right_threshold = cal.right_range * (.35 if self._direction == 'right' else .5)
-            # Sideways tilts take priority over finger posture; output is cardinal.
-            if tilt <= -left_threshold:
-                direction, velocity, status = 'left', (-1, 0), 'Tilt left: moving left'
-            elif tilt >= right_threshold:
-                direction, velocity, status = 'right', (1, 0), 'Tilt right: moving right'
-            else:
-                margin = (cal.opened - cal.closed) * .05
-                if observation.opening >= high - (margin if self._direction == 'up' else 0):
+                index_touch = observation.pinches[0] < self.pinch_threshold
+                pinkie_touch = observation.pinches[3] < self.pinch_threshold
+                if index_touch and pinkie_touch:
+                    return self.stop('Both pinches detected: stopped')
+                if index_touch or pinkie_touch:
+                    pinching_finger = 0 if index_touch else 3
+                    other_open = sum(value >= high for index, value in enumerate(fingers)
+                                     if index != pinching_finger)
+                    if other_open < 2:
+                        return self.stop('Unclear pinch: keep other fingers open')
+                    if index_touch:
+                        direction, velocity, status = 'left', (-1, 0), 'Index-thumb pinch: moving left'
+                    else:
+                        direction, velocity, status = 'right', (1, 0), 'Pinkie-thumb pinch: moving right'
+                elif observation.opening >= high and all(value >= high for value in fingers):
                     direction, velocity, status = 'up', (0, -1), 'Open hand: moving up'
-                elif observation.opening <= low + (margin if self._direction == 'down' else 0):
-                    direction, velocity, status = 'down', (0, 1), 'Closed fist: moving down'
                 else:
-                    return self.stop('Relaxed neutral: stopped')
+                    return self.stop('Relaxed / unclear hand: stopped')
             self._direction = direction
             self._active = True
             self._velocity = velocity
@@ -163,10 +156,8 @@ def from_landmarks(points, aspect_ratio=1.0):
     palm = (0, 5, 9, 13, 17)
     dx = sum(xyz[i][0] for i in (5, 9, 13, 17)) / 4 - xyz[0][0]
     dy = sum(xyz[i][1] for i in (5, 9, 13, 17)) / 4 - xyz[0][1]
-    if math.hypot(dx, dy) < 1e-5:
-        raise ValueError('Wrist-to-knuckle direction is not visible from this camera angle.')
     return Observation(sum(points[i].x for i in palm) / 5,
                        sum(points[i].y for i in palm) / 5,
                        sum(opening) / 4,
                        tuple(distance(4, tip) / scale for tip in (8, 12, 16, 20)),
-                       math.atan2(dy, dx))
+                       math.atan2(dy, dx), tuple(opening))
