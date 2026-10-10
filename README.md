@@ -10,6 +10,57 @@ touches. Robot tracking and enemy collision are future integration work.
 
 ## Jetson setup
 
+### Ethan's web game with MediaPipe GPU controls
+
+The web game in `game/fight/debug.html` consumes the same UDP movement packets
+produced by this controller. No model conversion is needed: select GPU when
+starting the Python controller. Run all three processes on the Jetson; the page
+currently connects to `ws://localhost:8765`, so open it in the Jetson's browser.
+
+From the repository root, update and install the web relay once (Node.js/npm required):
+
+```bash
+git pull origin main
+npm ci --prefix game/fight
+```
+
+Terminal 1, from the repository root, starts the UDP-to-WebSocket relay:
+
+```bash
+node game/fight/relay.mjs
+```
+
+Terminal 2, from the repository root, starts GPU hand detection and sends controls
+to the relay's UDP port 5005:
+
+```bash
+source .venv/bin/activate
+python -m gesture_control --inference-device gpu --camera 0 --udp-port 5005
+```
+
+Use `--camera 1` for a different webcam. The Python window provides the camera
+preview and calibration. Click that window, press C, then tap Enter for each of
+the three calibration steps. A compatible saved calibration is loaded automatically.
+Keep this process running while playing; only one process should open the webcam.
+
+Terminal 3, from the repository root, serves the game:
+
+```bash
+python3 -m http.server 8000 --bind 127.0.0.1 --directory game/fight
+```
+
+Open **http://localhost:8000/debug.html** in the Jetson browser, then press B to
+start. Open palm = up, fist = down, index-thumb pinch = left, pinkie-thumb pinch =
+right. The game HUD displays gesture/link status. It expects relay WebSocket
+port 8765; overriding `WS_PORT` alone does not change the browser's hardcoded URL.
+Space in the Python window pauses gesture output; Space in the browser activates
+the game's shield. The browser currently bridges zero-movement packets for 150ms
+and expires disconnected input after 500ms, so stopping can have a short delay.
+
+For a camera-free connection test, use `--simulate --udp-port 5005` instead of the
+GPU command. Simulation verifies transport/game input, not GPU inference. The
+MediaPipe GPU CPU-comparison benchmark remains documented below.
+
 Target supplied by the team: Orin Nano, JetPack 7.2.1-b49, Python 3.12.3,
 Linux aarch64, glibc 2.39. This repository has not yet been tested on that device.
 MediaPipe 1.1.0 has a Linux ARM64 wheel. CPU is the default; `--inference-device gpu`
