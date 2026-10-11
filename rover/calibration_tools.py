@@ -4,7 +4,6 @@ from pathlib import Path
 import cv2,numpy as np
 from gesture_control.tracking import open_camera
 from .calibration import BoardCalibration
-from .camera_guard import CameraGuard
 
 def calibrate_intrinsics(camera,backend,output,cols,rows,square_mm):
  if min(cols,rows)<3 or square_mm<=0:raise ValueError('Measured checkerboard geometry required')
@@ -64,9 +63,9 @@ def validate_calibration(camera,backend,calibration,tag_id):
  from .vision import unique_marker
  c=BoardCalibration.load(calibration)
  if c.data['camera']!=str(camera):raise ValueError('Wrong calibration camera')
- cap=open_camera(camera,backend);detector=cv2.aruco.ArucoDetector(cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_APRILTAG_36h11),cv2.aruco.DetectorParameters());measured=[];guard=None
+ cap=open_camera(camera,backend);detector=cv2.aruco.ArucoDetector(cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_APRILTAG_36h11),cv2.aruco.DetectorParameters());measured=[]
  try:
-  print('Place TWO DIFFERENT fixed AprilTags beside diagonally opposite board corners, at tabletop height and visible throughout operation. Do not move them.',flush=True)
+  print('Use only the rover tag. Keep camera and projector fixed during validation and play.',flush=True)
   print('Measure rover centre at table centre and near each corner of usable area. Space captures, Enter finishes after 5 locations, Q cancels.',flush=True)
   while True:
    ok,frame=cap.read()
@@ -77,12 +76,6 @@ def validate_calibration(camera,backend,calibration,tag_id):
    cv2.imshow('Reference validation',frame);key=cv2.waitKey(10)&255
    if key in (ord('q'),27):raise RuntimeError('Validation cancelled')
    if key==32 and pose:
-    if guard is None:
-     candidates=[(int(i[0]),marker.reshape(4,2).tolist()) for marker,i in zip(corners,ids) if int(i[0])!=tag_id]
-     if len(candidates)!=2:raise ValueError('Exactly two fixed reference tags, different from rover ID, must be visible')
-     guard={'markers':[{'tag_id':tag_id,'corners_px':points} for tag_id,points in candidates]}
-     c.data['camera_guard']=guard;guard_check=CameraGuard(c)
-    if not guard_check.check(corners,ids):raise ValueError('Fixed references must stay visible during validation')
     x,y=map(float,input('Measured rover-centre x_mm y_mm: ').split());measured.append([x,y,pose.x_mm,pose.y_mm])
    if key in (10,13) and len(measured)>=5:break
   a=np.asarray(measured)
@@ -90,5 +83,6 @@ def validate_calibration(camera,backend,calibration,tag_id):
   if np.ptp(a[:,0])<300 or np.ptp(a[:,1])<150:raise ValueError('References must span centre and corners of board')
   error=float(np.max(np.linalg.norm(a[:,:2]-a[:,2:],axis=1)))
   if error>20:raise ValueError(f'Validation error {error:.1f} mm exceeds 20mm. Recalibrate.')
-  c.data.update(camera_guard=guard,validation_error_mm=error,validation_references=measured,verified=True);c.save(calibration);print(f'Validated max error {error:.1f}mm',flush=True)
+  c.data.pop('camera_guard',None)
+  c.data.update(validation_error_mm=error,validation_references=measured,verified=True);c.save(calibration);print(f'Validated max error {error:.1f}mm',flush=True)
  finally:cap.release();cv2.destroyAllWindows()

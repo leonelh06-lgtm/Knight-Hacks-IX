@@ -228,10 +228,12 @@ collision response is intentionally provisional; all default behavior above is
 specified so the initial implementation can be evaluated concretely.
 
 ## Implementation verification notes
-Camera validity uses two stationary AprilTag references at tabletop height beside
-opposite board corners, spanning at least 300 by 150 mm. Camera pose is re-estimated
-and induced error is checked across the board at tabletop and raised tag height.
-More than 4 mm invalidates calibration; the allowed drift is added to clearance.
+Updated 2026-10-11 at the user's request: only one AprilTag on the rover is
+required. Fixed reference tags and automatic camera-motion detection are removed
+because additional tags cannot be printed before the deadline. Camera/projector
+mounts must remain fixed after calibration; movement requires manual stop,
+browser I invalidation, and fresh board calibration/validation. Tag-loss,
+freshness, table-edge and explicit-arming checks remain.
 Rover telemetry carries run_id to separate process generations. A process restart
 pauses the browser encounter and requires explicit recovery/arming. Dry-run prints
 pose, heading, capture age and valid/stale status even when disarmed.

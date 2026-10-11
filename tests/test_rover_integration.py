@@ -11,7 +11,7 @@ class Tracker:
  def latest(self):return PoseSample(Pose(457,254,0),time.monotonic(),True)
  def close(self):self.closed=True
 class Cal:
- data=dict(camera='1',image_size=[1280,720],projection_size=[1280,720],calibration_id='c',verified=True,validation_error_mm=5,tag_height_mm=177.8,camera_guard=dict(tag_id=1,corners_px=[[1,1],[2,1],[2,2],[1,2]]),arena=game()['arena'])
+ data=dict(camera='1',image_size=[1280,720],projection_size=[1280,720],calibration_id='c',verified=True,validation_error_mm=5,tag_height_mm=177.8,arena=game()['arena'])
 class Tests(unittest.IsolatedAsyncioTestCase):
  def args(self,port=0,**kw):
   d=dict(camera=1,tag_id=0,camera_backend='auto',game_state_port=port,rover_state_port=0,dry_run=True,frames=4);d.update(kw);return SimpleNamespace(**d)
@@ -38,7 +38,7 @@ class Tests(unittest.IsolatedAsyncioTestCase):
  def test_bad_setup_rejected_before_resources(self):
   from unittest.mock import patch
   for overrides in [dict(camera=2),dict(tag_id=1)]:
-   with patch('rover.__main__.BoardCalibration.load',return_value=Cal()),patch('rover.__main__.read_config',return_value=config()):
+   with patch('rover.__main__.BoardCalibration.load',return_value=Cal()),patch('rover.__main__.read_config',return_value={**config(),'tag_id':0}):
     with self.assertRaises(ValueError):load_setup(SimpleNamespace(config='x',calibration='x',**vars(self.args(**overrides))))
   with self.assertRaises(FileNotFoundError):load_setup(SimpleNamespace(config='missing-file',calibration='missing-calibration',**vars(self.args())))
  def test_cli_has_calibration_and_dry_run_modes(self):

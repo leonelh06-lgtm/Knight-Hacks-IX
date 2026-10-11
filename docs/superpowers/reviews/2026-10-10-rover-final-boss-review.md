@@ -1,5 +1,13 @@
 # Rover boss review and acceptance record
 
+Current scope update (2026-10-11): the user has only one AprilTag and requested
+removal of stationary tags before the deadline. The fixed-reference camera guard
+is removed from vision, loader and calibration. Camera/projector stability is
+now an operator responsibility; stop and recalibrate after either moves.
+Single-tag verification: 70 Python tests and 23 Node tests passed; a focused
+independent review found no Critical or Important issues. The review below records
+the earlier three-tag design, not current requirements.
+
 Reviewed range: 4a14d63..33d0d67, by an independent fresh-context reviewer.
 The reviewer required three functional fixes; this branch implements all three.
 

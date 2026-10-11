@@ -34,19 +34,17 @@ Board: **914.4 x 508 mm** (36 x 20 inches). Origin is its physical top-left,
 x to the right, y down. Rover nominal dimensions are 177.8 mm (7 inches), but
 measure the actual footprint and tag height rather than copying that number.
 
-Use three different **AprilTag 36h11** markers. ID 0 goes flat and rigid on the
-rover; its decoded top edge points toward the rover's forward driving direction.
-IDs 1 and 2 are fixed beside diagonally opposite corners, at the same height
-as the tabletop calibration plane, and visible throughout operation. Their
-locations must span at least 300 mm horizontally and 150 mm vertically.
-These references can stay beside the board in earlier levels, leaving the
-playing surface clear. The tracker estimates the current camera transform from
-both references and checks induced position error over the board at tabletop
-and raised tag height. Over 4 mm of induced error invalidates calibration and
-exits the process; the allowed 4 mm drift is added to stopping clearance.
-Missing any required tag stops driving; recovery requires explicit re-arm.
+Use **one AprilTag 36h11 marker on the rover**. Its decoded top edge points
+toward the rover's forward driving direction. No stationary reference tags
+are required.
 
-The overhead camera must see the entire board and all three markers. Use a different
+Keep the overhead camera and projector rigidly mounted after calibration.
+With a single moving tag, camera movement cannot be distinguished reliably
+from rover movement. Stop the rover with x + Enter, press I in the browser,
+and repeat board calibration/validation if the camera, board or projector moves.
+Tag loss and stale camera/game data still stop and disarm the rover.
+
+The overhead camera must see the entire board and the rover marker. Use a different
 camera from the hand controller. Prefer a persistent Linux device path if camera
 numbers change. Leave resolution, focus, zoom and mount fixed after calibration.
 If projector alignment or arena placement changes, press I in the browser,
@@ -90,7 +88,7 @@ stop the rover, and recalibrate before resuming.
    plane; a tabletop-only homography would misplace a seven-inch-high rover.
    The result is initially unverified.
 
-4. Keep reference IDs 1 and 2 fixed. Place the rover at the centre and at least four
+4. Keep the camera/projector fixed. Place the single-tag rover at the centre and at least four
    positions near the usable area's corners. Measure the rover centre's board
    coordinates with a ruler for each position.
 
@@ -101,7 +99,7 @@ stop the rover, and recalibrate before resuming.
    Space captures the detected centre and asks for measured x_mm y_mm in the
    terminal. Enter finishes after five locations spanning at least 300 mm
    horizontally and 150 mm vertically. Maximum error must be at most 20 mm.
-   Both fixed tag baselines are saved with the validation.
+   Only the rover tag is needed. Measured rover-centre locations are saved with the validation.
 
 5. Export the matching calibration ID/arena/pixel dimensions to the browser:
 
@@ -212,7 +210,7 @@ Physical mode disables the virtual boss's attacks and projected boss circle.
 Direct pursuit uses heading hysteresis: turn above 0.30 rad; leave turn below
 0.15 rad. A circumscribed footprint limits targets and turning near table edges.
 Clearance also includes measured stopping distance, measured calibration error,
-the 4 mm camera-guard allowance, and configured margin. Edge-adjacent projected targets may be physically
+and configured margin. Edge-adjacent projected targets may be physically
 unreachable; the rover waits inside its safe region.
 
 Existing firmware drives at a fixed speed (150/255 on the rover branch).
@@ -227,12 +225,12 @@ No rows below have been physically verified by this implementation.
 |---|---|---|
 | Board and projected canvas | Actual dimensions, placement, canvas pixels | Pending |
 | Rover and tag | Measured length/width/height, offset, forward tag edge | Pending |
-| Overhead camera | Device, resolution, intrinsics RMS, fixed tag baselines | Pending |
+| Overhead camera | Device, resolution, intrinsics RMS, rigid camera mount | Pending |
 | Reference positions | Five measured centres and maximum residual <=20 mm | Pending |
 | Wheels raised, controlled hardware test | Confirm W forward, A left, D right, X stop; firmware watchdog <=500 ms | Pending |
 | Fixed-speed braking test on suitable surface | Worst observed stopping distance including turn, current draw, power stability | Pending |
 | Dry-run on actual board | Direction, scale, contact, unreachable target, edge stop | Pending |
-| Authorized tabletop test | Tag occlusion, stale camera/game, manual stop, tab/level exit, re-arm | Pending |
+| Authorized tabletop test | Tag occlusion, stale camera/game, manual stop, tab/level exit, re-arm; manual recalibration after camera/projector movement | Pending |
 | Full system load | GPU hand + overhead camera + BLE + browser + projector | Pending |
 | Final encounter | Place rover, explicit arm, contact, stop, restart, removal | Pending |
 

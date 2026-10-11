@@ -7,7 +7,6 @@ from .pursuit import PursuitController,Decision
 from .protocol import validate_message,number
 from .vision import OverheadTracker
 from .ble import MotorLink
-from .camera_guard import CameraGuard,MAX_CAMERA_DRIFT_MM
 
 def camera_arg(value):
     return int(value) if str(value).isdigit() else value
@@ -47,15 +46,13 @@ def load_setup(args):
     config=read_config(args.config);calibration=BoardCalibration.load(args.calibration);data=calibration.data
     if data['camera']!=str(args.camera):raise ValueError('Calibration belongs to another overhead camera')
     if config.get('tag_id',args.tag_id)!=args.tag_id:raise ValueError('Configured rover tag ID differs from --tag-id')
-    guard=CameraGuard(calibration)
-    if args.tag_id in guard.ids:raise ValueError('Rover and reference tags must have different IDs')
     if len(data.get('projection_size',[]))!=2 or any(type(n)!=int or n<=0 for n in data['projection_size']):raise ValueError('Measured projection pixel dimensions required')
     if config.get('board')!={'width_mm':914.4,'height_mm':508}:raise ValueError('This calibration is for a 36 by 20 inch board')
     for field,limit in [('length_mm',914.4),('width_mm',508)]:number(config['footprint'][field],.01,limit)
     if config.get('verified') is True:
         number(config.get('stopping_distance_mm'),0,914.4);number(config.get('extra_margin_mm'),0,508)
     config={**config,'calibration_id':data['calibration_id'],'calibration_verified':data.get('verified') is True,
-            'validation_error_mm':data.get('validation_error_mm'),'guard_error_mm':MAX_CAMERA_DRIFT_MM,'arena':data['arena']}
+            'validation_error_mm':data.get('validation_error_mm'),'arena':data['arena']}
     return config,calibration
 
 def export_game_calibration(calibration,path):
@@ -92,6 +89,7 @@ async def run_runtime(args,config,calibration,*,tracker_factory=OverheadTracker,
             link=link_factory(config.get('ble_name','Makeblock_LE001b10674482'),decision_source,on_fault=controller.disarm)
             link_task=asyncio.create_task(link.run(stop))
         print(f"Rover {'DRY RUN (no BLE)' if args.dry_run else 'BLE mode'}; game UDP {sock.getsockname()[1]}; waiting disarmed.",flush=True)
+        print('Single-tag mode: keep camera/projector fixed; stop and recalibrate if either moves.',flush=True)
         print('g + Enter arms; x + Enter stops; q + Enter exits. B in browser prepares final level.',flush=True)
         last_print='';last_print_at=-1e9;tick_count=0;last=Decision(b'X',False,'waiting')
         while True:
