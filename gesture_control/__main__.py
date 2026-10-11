@@ -34,6 +34,8 @@ def parse_args():
     mirror_options.add_argument('--no-mirror', dest='mirror', action='store_false')
     parser.set_defaults(mirror=False)
     parser.add_argument('--no-preview', action='store_true')
+    parser.add_argument('--headless', action='store_true', help='Camera-to-UDP controls for the web game; no demo window')
+    parser.add_argument('--calibrate', action='store_true', help='Force terminal calibration in headless mode')
     parser.add_argument('--fullscreen', action='store_true')
     parser.add_argument('--profile', default='calibration.json')
     parser.add_argument('--speed', type=float, default=180, help='Maximum pixels/second')
@@ -49,6 +51,12 @@ def parse_args():
         parser.error('Speed, pinch threshold and stale timeout must be positive; frames must be nonnegative.')
     if args.udp_port is not None and not 1 <= args.udp_port <= 65535:
         parser.error('UDP port must be between 1 and 65535.')
+    if args.headless and args.udp_port is None:
+        args.udp_port = 5005
+    if args.calibrate and not args.headless:
+        parser.error('--calibrate requires --headless. In the demo, use C to calibrate.')
+    if args.headless and args.screenshot:
+        parser.error('--screenshot requires the graphical demo.')
     return args
 
 
@@ -58,6 +66,10 @@ def main():
           f'device={args.inference_device}, udp={args.udp_port or "disabled"}', flush=True)
     if not args.simulate and not Path(args.model).is_file():
         raise SystemExit('Model missing. Run: python -m gesture_control.download_model')
+    if args.headless:
+        from .headless import run_headless
+        run_headless(args)
+        return
     try:
         print('[startup] Importing Pygame', flush=True)
         import pygame

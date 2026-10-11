@@ -35,13 +35,18 @@ to the relay's UDP port 5005:
 
 ```bash
 source .venv/bin/activate
-python -m gesture_control --inference-device gpu --camera 0 --udp-port 5005
+python3 -u -m gesture_control --headless --inference-device gpu --camera 0 --udp-port 5005
 ```
 
-Use `--camera 1` for a different webcam. The Python window provides the camera
-preview and calibration. Click that window, press C, then tap Enter for each of
-the three calibration steps. A compatible saved calibration is loaded automatically.
-Keep this process running while playing; only one process should open the webcam.
+Use `--camera 1` for a different webcam. **Headless mode opens no Python demo or
+camera-preview window**; Ethan's browser page is the game. A compatible saved
+calibration is loaded automatically. Otherwise follow the three terminal prompts:
+relaxed fingers, fist, then open hand. Press Enter to start each recording. Failed
+poses retry without discarding completed recordings. Keep this process running
+while playing; only one process should open the webcam. Terminal commands require
+Enter: `c` recalibrates, `p` pauses/resumes, `q` quits. Ctrl+C also stops and sends
+a zero-movement packet. Use `--calibrate` to force fresh terminal calibration.
+Headless mode defaults to UDP port 5005 when `--udp-port` is omitted.
 
 Terminal 3, from the repository root, serves the game:
 
@@ -53,12 +58,13 @@ Open **http://localhost:8000/debug.html** in the Jetson browser, then press B to
 start. Open palm = up, fist = down, index-thumb pinch = left, pinkie-thumb pinch =
 right. The game HUD displays gesture/link status. It expects relay WebSocket
 port 8765; overriding `WS_PORT` alone does not change the browser's hardcoded URL.
-Space in the Python window pauses gesture output; Space in the browser activates
-the game's shield. The browser currently bridges zero-movement packets for 150ms
+Type `p` then Enter in the controller terminal to pause gesture output; Space in
+the browser activates the game's shield. The browser currently bridges zero-movement packets for 150ms
 and expires disconnected input after 500ms, so stopping can have a short delay.
 
-For a camera-free connection test, use `--simulate --udp-port 5005` instead of the
-GPU command. Simulation verifies transport/game input, not GPU inference. The
+For a camera-free connection test, keep `--headless` and add `--simulate` to the
+controller command. Headless simulation continuously sends UP; it verifies
+transport/game input, not GPU inference. The
 MediaPipe GPU CPU-comparison benchmark remains documented below.
 
 Target supplied by the team: Orin Nano, JetPack 7.2.1-b49, Python 3.12.3,
