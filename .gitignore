@@ -7,6 +7,7 @@ models/
 calibration.json
 .env
 .env.*
+!backend/.env.example
 .test-deps/
 demo.png
 benchmark-results/
