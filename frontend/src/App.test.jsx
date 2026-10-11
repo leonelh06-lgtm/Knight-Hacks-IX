@@ -75,14 +75,60 @@ describe("display-only player guide", () => {
     );
     expect(screen.getAllByText(/simulated input/i)[0]).toBeVisible();
   });
+  it("keeps healthy preview mounted across poll cycles and expires stalled captures", async () => {
+    vi.useFakeTimers({
+      toFake: [
+        "setTimeout",
+        "clearTimeout",
+        "setInterval",
+        "clearInterval",
+        "performance",
+      ],
+    });
+    let stalled = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        stalled ? new Promise(() => {}) : { ok: true, json: async () => live },
+      ),
+    );
+    function Probe() {
+      const { status, connectionState } = useTrackingStatus();
+      return (
+        <>
+          <span>{activeDirection(status) || "no movement"}</span>
+          <TrackingPreview status={status} connectionState={connectionState} />
+        </>
+      );
+    }
+    render(<Probe />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    const image = screen.getByAltText(/live camera/i);
+    for (let i = 0; i < 12; i++) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(100);
+      });
+      expect(screen.getByText("up")).toBeInTheDocument();
+      expect(screen.getByAltText(/live camera/i)).toBe(image);
+    }
+    stalled = true;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(screen.getByText("no movement")).toBeInTheDocument();
+    expect(screen.queryByAltText(/live camera/i)).not.toBeInTheDocument();
+  });
   it("reconnects and clears old state after a failed read", async () => {
     vi.useFakeTimers();
     let request = 0;
+    let offline = false;
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => {
         request++;
-        if (request === 2) throw new Error("offline");
+        if (offline) throw new Error("offline");
         return { ok: true, json: async () => live };
       }),
     );
@@ -99,18 +145,21 @@ describe("display-only player guide", () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(screen.getByText("connected:up")).toBeInTheDocument();
+    offline = true;
     await act(async () => {
       await vi.advanceTimersByTimeAsync(500);
     });
     expect(screen.getByText("disconnected:none")).toBeInTheDocument();
+    offline = false;
     await act(async () => {
       await vi.advanceTimersByTimeAsync(500);
     });
     expect(screen.getByText("connected:up")).toBeInTheDocument();
+    const completedRequests = request;
     unmount();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
-    expect(request).toBe(3);
+    expect(request).toBe(completedRequests);
   });
 });

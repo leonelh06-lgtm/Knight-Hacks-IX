@@ -27,6 +27,7 @@ export function useTrackingStatus() {
     let disposed = false,
       timer,
       controller;
+    let pollDelay = 150;
     const clock = setInterval(() => setNow(performance.now()), 100);
     async function poll() {
       controller = new AbortController();
@@ -40,6 +41,10 @@ export function useTrackingStatus() {
         const status = await response.json();
         if (!status || typeof status.phase !== "string")
           throw new Error("Invalid preview status");
+        pollDelay =
+          Number.isFinite(status.staleAfterMs) && status.staleAfterMs > 0
+            ? Math.max(25, Math.min(150, status.staleAfterMs / 3))
+            : 150;
         if (!disposed) {
           setSample({ status, received: performance.now() });
           setConnectionState("connected");
@@ -51,7 +56,7 @@ export function useTrackingStatus() {
         }
       } finally {
         clearTimeout(timeout);
-        if (!disposed) timer = setTimeout(poll, 500);
+        if (!disposed) timer = setTimeout(poll, pollDelay);
       }
     }
     poll();
