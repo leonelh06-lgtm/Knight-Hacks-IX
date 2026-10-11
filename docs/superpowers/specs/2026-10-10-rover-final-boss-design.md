@@ -68,7 +68,7 @@ their features with this design. Coordinate changes to shared files separately.
 
 ## Shared coordinates and projection calibration
 
-Use millimetres in a board coordinate system: origin at the projected arena's
+Use millimetres in a board coordinate system: origin at the physical board's
 top-left, x right, y down, heading in radians measured from +x toward +y.
 
 914.4 by 508 mm describes the physical board, not necessarily the entire projected
