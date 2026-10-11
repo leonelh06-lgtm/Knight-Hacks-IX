@@ -6,15 +6,15 @@
 // gestures. heroSpeed/laneAssist/wallT/starThresholds are its tunables.
 export const LEVELS = [
   {
-    name: 'The Hedge Maze', map: 'maps/level1.png', mode: 'maze', heroSpeed: 2.4,
+    id: 'hedge-maze', physicalBoss: false, name: 'The Hedge Maze', map: 'maps/level1.png', mode: 'maze', heroSpeed: 2.4,
     laneAssist: 0.6, wallT: 0.32, starThresholds: { three: 40, two: 70 },
   },
   {
-    name: 'Ruins', map: 'maps/level2.png', mode: 'boss', bossMode: 'adaptive', warning: 1.5,
+    id: 'ruins', physicalBoss: false, name: 'Ruins', map: 'maps/level2.png', mode: 'boss', bossMode: 'adaptive', warning: 1.5,
     heroSpeed: 3, pillars: true, start: { x: 0, z: 5 },
   },
   {
-    name: 'Boss Arena', map: 'maps/boss.png', mode: 'boss', bossMode: 'adaptive', warning: 1.3,
+    id: 'boss-arena', physicalBoss: true, name: 'Boss Arena', map: 'maps/boss.png', mode: 'boss', bossMode: 'adaptive', warning: 1.3,
     heroSpeed: 3, pillars: false, start: { x: 0, z: 5 },
   },
 ];
