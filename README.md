@@ -6,7 +6,7 @@ a top-down forest arena. Both hands are supported. The hand faces the camera, pa
 out. Default controls use **open hand for up, fist for down, index-thumb pinch for
 left, and pinkie-thumb pinch for right**. A partially relaxed hand stops movement.
 A second mode uses four thumb-to-finger
-touches. An autonomous overhead-camera rover can serve as the final boss; see [rover setup](rover/README.md).
+touches. The three-level web game ends with a projected virtual boss in Boss Arena.
 
 ## Jetson setup
 

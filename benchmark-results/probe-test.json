@@ -1,0 +1,15 @@
+{
+  "model": "HuggingFaceTB/SmolVLM2-256M-Video-Instruct",
+  "revision": "9b299836fe84e0aabd39e1e07651e569e5dfe87c",
+  "device": "cuda",
+  "dry_run": false,
+  "video": "C:\\Programming Projects\\KnightHacksIX\\.test-deps\\probe-test.avi",
+  "prompt": "Classify the visible hand. Reply with exactly one label and no explanation: open_palm, fist, index_pinch, pinkie_pinch, unknown. open_palm: fingers extended, palm facing camera. fist: fingers curled closed. index_pinch: thumb touching index fingertip, other fingers extended. pinkie_pinch: thumb touching little fingertip, other fingers extended. unknown: no clear hand, relaxed hand, ambiguous posture, or cannot tell. Distinguish which finger touches the thumb; do not guess when unclear.",
+  "samples": 3,
+  "expected": "fist",
+  "mean_processing_ms": 42.0,
+  "accuracy": 1.0,
+  "timing": "Preprocessing + generation + decoding, CUDA synchronized; excludes video decode, model loading, and one warmup.",
+  "torch_version": "test-double",
+  "transformers_version": "test-double"
+}

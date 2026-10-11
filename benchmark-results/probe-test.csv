@@ -1,0 +1,4 @@
+frame,video_seconds,prediction,raw_answer,processing_ms,expected,correct
+0,0.0,fist,fist,42.0,fist,True
+1,0.1,fist,fist,42.0,fist,True
+2,0.2,fist,fist,42.0,fist,True
