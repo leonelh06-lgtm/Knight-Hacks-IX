@@ -1,12 +1,15 @@
 # Forest Motion: Jetson gesture control
 
+**Level 3 virtual TK boss battle:** see [LEVEL3-SETUP.md](LEVEL3-SETUP.md)
+for the 30-second survival fight and direct preview link.
+
 A local Python hand-control prototype for the project in [CONTEXT.md](CONTEXT.md).
 MediaPipe detects hand landmarks; adjustable control logic moves a character inside
 a top-down forest arena. Both hands are supported. The hand faces the camera, palm
 out. Default controls use **open hand for up, fist for down, index-thumb pinch for
 left, and pinkie-thumb pinch for right**. A partially relaxed hand stops movement.
 A second mode uses four thumb-to-finger
-touches. An autonomous overhead-camera rover can serve as the final boss; see [rover setup](rover/README.md).
+touches. Level 3's final boss is entirely virtual; the optional rover tools are documented separately in [rover setup](rover/README.md).
 
 ## Jetson setup
 

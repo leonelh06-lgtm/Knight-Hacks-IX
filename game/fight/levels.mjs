@@ -9,11 +9,7 @@ export const LEVELS = [
     l2: { SURVIVE_TIME: 20 },
   },
   {
-    id: 'ruins', physicalBoss: false, name: 'Corrupted Sanctuary', map: 'maps/level3-corrupted.png', mode: 'boss', bossMode: 'adaptive', warning: 1.5,
-    heroSpeed: 3, pillars: false, start: { x: 0, z: 5 },
-  },
-  {
-    id: 'boss-arena', physicalBoss: true, name: 'Boss Arena', map: 'maps/boss.png', mode: 'boss', bossMode: 'adaptive', warning: 1.3,
-    heroSpeed: 3, pillars: false, start: { x: 0, z: 5 },
+    id: 'ruins', physicalBoss: false, name: "T.K.'s Last Stand", map: 'maps/level3-corrupted.png', mode: 'tk',
+    heroSpeed: 3, start: { x: 0, z: 5 }, bossPosition: { x: 0, z: 3.0 },
   },
 ];
