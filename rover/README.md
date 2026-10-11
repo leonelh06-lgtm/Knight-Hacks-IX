@@ -34,15 +34,19 @@ Board: **914.4 x 508 mm** (36 x 20 inches). Origin is its physical top-left,
 x to the right, y down. Rover nominal dimensions are 177.8 mm (7 inches), but
 measure the actual footprint and tag height rather than copying that number.
 
-Use two different **AprilTag 36h11** markers. ID 0 goes flat and rigid on the
+Use three different **AprilTag 36h11** markers. ID 0 goes flat and rigid on the
 rover; its decoded top edge points toward the rover's forward driving direction.
-ID 1 is fixed beside the board and visible to the overhead camera throughout
-operation. The reference can stay beside the board in earlier levels, leaving
-the playing surface clear. Moving the camera/reference by over 4 pixels
-invalidates calibration and exits the rover process. Missing either tag stops
-driving; recovering tracking requires explicit re-arm.
+IDs 1 and 2 are fixed beside diagonally opposite corners, at the same height
+as the tabletop calibration plane, and visible throughout operation. Their
+locations must span at least 300 mm horizontally and 150 mm vertically.
+These references can stay beside the board in earlier levels, leaving the
+playing surface clear. The tracker estimates the current camera transform from
+both references and checks induced position error over the board at tabletop
+and raised tag height. Over 4 mm of induced error invalidates calibration and
+exits the process; the allowed 4 mm drift is added to stopping clearance.
+Missing any required tag stops driving; recovery requires explicit re-arm.
 
-The overhead camera must see the entire board and both markers. Use a different
+The overhead camera must see the entire board and all three markers. Use a different
 camera from the hand controller. Prefer a persistent Linux device path if camera
 numbers change. Leave resolution, focus, zoom and mount fixed after calibration.
 If projector alignment or arena placement changes, press I in the browser,
@@ -86,7 +90,7 @@ stop the rover, and recalibrate before resuming.
    plane; a tabletop-only homography would misplace a seven-inch-high rover.
    The result is initially unverified.
 
-4. Keep the reference ID 1 fixed. Place the rover at the centre and at least four
+4. Keep reference IDs 1 and 2 fixed. Place the rover at the centre and at least four
    positions near the usable area's corners. Measure the rover centre's board
    coordinates with a ruler for each position.
 
@@ -97,7 +101,7 @@ stop the rover, and recalibrate before resuming.
    Space captures the detected centre and asks for measured x_mm y_mm in the
    terminal. Enter finishes after five locations spanning at least 300 mm
    horizontally and 150 mm vertically. Maximum error must be at most 20 mm.
-   The fixed tag baseline is saved with the validation.
+   Both fixed tag baselines are saved with the validation.
 
 5. Export the matching calibration ID/arena/pixel dimensions to the browser:
 
@@ -152,7 +156,7 @@ python -u -m rover --camera 1 --tag-id 0 \
 ```
 
 Dry-run never scans or connects BLE, and prints intended W/A/D/X commands.
-It obeys the same arming eligibility as real operation. If measurements remain
+It prints measured x/y in mm, heading in degrees, source-frame age and VALID/STALE/INVALID status at least once per second, even when disarmed. It obeys the same arming eligibility as real operation. If measurements remain
 unverified, it will show tracking status but refuse arming.
 
 **5 â€” optional BLE discovery, when rover process is stopped**
@@ -198,7 +202,7 @@ Physical mode disables the virtual boss's attacks and projected boss circle.
   effect without applying that effect again.
 - Browser publishes authoritative board-space player position at ~20 Hz through
   existing WebSocket 8765. Relay forwards to localhost UDP 8766; rover state/contact
-  returns on UDP 8767. Hand gestures retain UDP 5005.
+  returns on UDP 8767. Hand gestures retain UDP 5005. Telemetry also includes run_id, a unique rover-process generation; restarting the process pauses the encounter until P and explicit re-arm. Old generations cannot return.
 - Python uses its own monotonic receive time, not a browser timestamp.
   Game age above 500 ms or source-frame age above 250 ms stops and disarms.
   Capture/detection runs in a worker; BLE heartbeat is independent at ~100 ms.
@@ -207,8 +211,8 @@ Physical mode disables the virtual boss's attacks and projected boss circle.
 
 Direct pursuit uses heading hysteresis: turn above 0.30 rad; leave turn below
 0.15 rad. A circumscribed footprint limits targets and turning near table edges.
-Clearance also includes measured stopping distance, measured calibration error
-and configured margin. Edge-adjacent projected targets may be physically
+Clearance also includes measured stopping distance, measured calibration error,
+the 4 mm camera-guard allowance, and configured margin. Edge-adjacent projected targets may be physically
 unreachable; the rover waits inside its safe region.
 
 Existing firmware drives at a fixed speed (150/255 on the rover branch).
@@ -223,7 +227,7 @@ No rows below have been physically verified by this implementation.
 |---|---|---|
 | Board and projected canvas | Actual dimensions, placement, canvas pixels | Pending |
 | Rover and tag | Measured length/width/height, offset, forward tag edge | Pending |
-| Overhead camera | Device, resolution, intrinsics RMS, fixed tag baseline | Pending |
+| Overhead camera | Device, resolution, intrinsics RMS, fixed tag baselines | Pending |
 | Reference positions | Five measured centres and maximum residual <=20 mm | Pending |
 | Wheels raised, controlled hardware test | Confirm W forward, A left, D right, X stop; firmware watchdog <=500 ms | Pending |
 | Fixed-speed braking test on suitable surface | Worst observed stopping distance including turn, current draw, power stability | Pending |

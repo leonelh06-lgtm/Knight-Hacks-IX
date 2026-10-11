@@ -226,3 +226,13 @@ Before implementation, confirm measured tag height/offset, usable projected aren
 placement, and the game agent's current final-level interface. The configurable
 collision response is intentionally provisional; all default behavior above is
 specified so the initial implementation can be evaluated concretely.
+
+## Implementation verification notes
+Camera validity uses two stationary AprilTag references at tabletop height beside
+opposite board corners, spanning at least 300 by 150 mm. Camera pose is re-estimated
+and induced error is checked across the board at tabletop and raised tag height.
+More than 4 mm invalidates calibration; the allowed drift is added to clearance.
+Rover telemetry carries run_id to separate process generations. A process restart
+pauses the browser encounter and requires explicit recovery/arming. Dry-run prints
+pose, heading, capture age and valid/stale status even when disarmed.
+Hardware acceptance remains pending until actual measurements and motor tests.

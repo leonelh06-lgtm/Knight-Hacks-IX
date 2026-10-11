@@ -22,7 +22,7 @@ let contactPolicy = 'end_level';
 let physicalBoss;
 function endPhysicalLevel(outcome='defeat') {
   physicalState.terminal = true; physicalState.phase = outcome;
-  physicalState.message = outcome === 'victory' ? 'BOSS DEFEATED' : 'ROVER CONTACT — press B to restart';
+  physicalState.message = outcome === 'victory' ? 'BOSS DEFEATED' : 'ROVER CONTACT â€” press B to restart';
   publishRover(true);
 }
 function makePhysicalBoss() {
@@ -121,7 +121,8 @@ function attachRoverClient() {
   roverClient = createRoverClient({
     socket:ws, sessionId:roverSession, calibration:roverCalibration,
     onContact:event=>physicalBoss.handleContact(event),
-    onState:state=>{ roverTelemetry=state; roverTelemetryAt=now(); }
+    onState:state=>{ roverTelemetry=state; roverTelemetryAt=now(); },
+    onRestart:()=>{physicalState.paused=true;physicalState.message='Rover restarted â€” P to resume, then g + Enter to re-arm';}
   });
 }
 function publishRover(force=false) {
@@ -287,8 +288,8 @@ function gesturePacketStats(t) {
     if (!physicalState.terminal) {
       physicalState.phase=eligible && roverTelemetry?.valid && roverTelemetry?.armed && t-roverTelemetryAt<0.5 ? 'playing' : 'waiting';
       physicalState.message= !roverCalibration ? 'Calibrate rover and projection first' :
-        projectionInvalid ? 'Projection changed — recalibrate and reload' :
-        !eligible ? 'Paused / projection size mismatch — P to resume after setup' :
+        projectionInvalid ? 'Projection changed â€” recalibrate and reload' :
+        !eligible ? 'Paused / projection size mismatch â€” P to resume after setup' :
         physicalState.phase==='playing' ? 'Physical rover pursuing' : 'Place tagged rover; g + Enter in rover terminal to arm';
     }
     if(physicalState.phase!=='playing') {targetVel={x:0,z:0};heroVel={x:0,z:0};}

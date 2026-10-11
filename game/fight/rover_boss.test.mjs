@@ -39,3 +39,18 @@ test('client claims ownership, waits for ack, emits validated state and contact 
  socket.message({...event,session_id:'old'});assert.equal(contacts,1);
  client.close();assert.equal(socket.sent.at(-1).active,false);
 });
+
+test('telemetry restart has a generation ID and requires recovery; old generations cannot return',()=>{
+ const socket=new Socket();const states=[];let restarts=0;
+ const client=createRoverClient({socket,sessionId:'s',calibration,onState:x=>states.push(x),onRestart:()=>restarts++});
+ socket.message({type:'game_claimed',session_id:'s'});
+ client.publishGame({level_id:'boss-arena',physical_boss:true,active:true,terminal:false,player:{x_mm:450,y_mm:245,radius_mm:15}});
+ const telemetry={type:'rover_state',version:1,session_id:'s',calibration_id:'c',valid:false,armed:false,status:'waiting',frame_age_ms:0,footprint:{length_mm:177.8,width_mm:177.8}};
+ socket.message({...telemetry,run_id:'old',seq:12000});
+ socket.message({...telemetry,run_id:'new',seq:0});
+ socket.message({...telemetry,run_id:'new',seq:1});
+ socket.message({...telemetry,run_id:'old',seq:12001});
+ assert.equal(states.length,3);assert.equal(restarts,1);
+ assert.equal(socket.sent.findLast(m=>m.type==='game_state').active,false);
+ client.close();
+});

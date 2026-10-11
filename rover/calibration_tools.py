@@ -4,6 +4,7 @@ from pathlib import Path
 import cv2,numpy as np
 from gesture_control.tracking import open_camera
 from .calibration import BoardCalibration
+from .camera_guard import CameraGuard
 
 def calibrate_intrinsics(camera,backend,output,cols,rows,square_mm):
  if min(cols,rows)<3 or square_mm<=0:raise ValueError('Measured checkerboard geometry required')
@@ -65,7 +66,7 @@ def validate_calibration(camera,backend,calibration,tag_id):
  if c.data['camera']!=str(camera):raise ValueError('Wrong calibration camera')
  cap=open_camera(camera,backend);detector=cv2.aruco.ArucoDetector(cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_APRILTAG_36h11),cv2.aruco.DetectorParameters());measured=[];guard=None
  try:
-  print('Place a DIFFERENT fixed AprilTag beside the board, visible throughout operation. Do not move it.',flush=True)
+  print('Place TWO DIFFERENT fixed AprilTags beside diagonally opposite board corners, at tabletop height and visible throughout operation. Do not move them.',flush=True)
   print('Measure rover centre at table centre and near each corner of usable area. Space captures, Enter finishes after 5 locations, Q cancels.',flush=True)
   while True:
    ok,frame=cap.read()
@@ -78,10 +79,10 @@ def validate_calibration(camera,backend,calibration,tag_id):
    if key==32 and pose:
     if guard is None:
      candidates=[(int(i[0]),marker.reshape(4,2).tolist()) for marker,i in zip(corners,ids) if int(i[0])!=tag_id]
-     if len(candidates)!=1:raise ValueError('Exactly one fixed reference tag, different from rover ID, must be visible')
-     guard={'tag_id':candidates[0][0],'corners_px':candidates[0][1]}
-    reference=unique_marker(corners,ids,guard['tag_id'])
-    if reference is None or np.max(np.linalg.norm(reference.reshape(4,2)-np.asarray(guard['corners_px']),axis=1))>4:raise ValueError('Camera or reference tag moved during validation')
+     if len(candidates)!=2:raise ValueError('Exactly two fixed reference tags, different from rover ID, must be visible')
+     guard={'markers':[{'tag_id':tag_id,'corners_px':points} for tag_id,points in candidates]}
+     c.data['camera_guard']=guard;guard_check=CameraGuard(c)
+    if not guard_check.check(corners,ids):raise ValueError('Fixed references must stay visible during validation')
     x,y=map(float,input('Measured rover-centre x_mm y_mm: ').split());measured.append([x,y,pose.x_mm,pose.y_mm])
    if key in (10,13) and len(measured)>=5:break
   a=np.asarray(measured)

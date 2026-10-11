@@ -1,5 +1,5 @@
 """Run autonomous overhead-camera boss, or calibrate without connecting motors."""
-import argparse,asyncio,json,math,socket,sys,threading,time
+import argparse,asyncio,json,math,socket,sys,threading,time,uuid
 from pathlib import Path
 from queue import Queue,Empty
 from .calibration import BoardCalibration
@@ -7,6 +7,7 @@ from .pursuit import PursuitController,Decision
 from .protocol import validate_message,number
 from .vision import OverheadTracker
 from .ble import MotorLink
+from .camera_guard import CameraGuard,MAX_CAMERA_DRIFT_MM
 
 def camera_arg(value):
     return int(value) if str(value).isdigit() else value
@@ -46,15 +47,15 @@ def load_setup(args):
     config=read_config(args.config);calibration=BoardCalibration.load(args.calibration);data=calibration.data
     if data['camera']!=str(args.camera):raise ValueError('Calibration belongs to another overhead camera')
     if config.get('tag_id',args.tag_id)!=args.tag_id:raise ValueError('Configured rover tag ID differs from --tag-id')
-    guard=data.get('camera_guard')
-    if not isinstance(guard,dict) or not isinstance(guard.get('tag_id'),int) or guard['tag_id']==args.tag_id:raise ValueError('A fixed reference tag is required to detect camera movement; validate calibration')
+    guard=CameraGuard(calibration)
+    if args.tag_id in guard.ids:raise ValueError('Rover and reference tags must have different IDs')
     if len(data.get('projection_size',[]))!=2 or any(type(n)!=int or n<=0 for n in data['projection_size']):raise ValueError('Measured projection pixel dimensions required')
     if config.get('board')!={'width_mm':914.4,'height_mm':508}:raise ValueError('This calibration is for a 36 by 20 inch board')
     for field,limit in [('length_mm',914.4),('width_mm',508)]:number(config['footprint'][field],.01,limit)
     if config.get('verified') is True:
         number(config.get('stopping_distance_mm'),0,914.4);number(config.get('extra_margin_mm'),0,508)
     config={**config,'calibration_id':data['calibration_id'],'calibration_verified':data.get('verified') is True,
-            'validation_error_mm':data.get('validation_error_mm'),'arena':data['arena']}
+            'validation_error_mm':data.get('validation_error_mm'),'guard_error_mm':MAX_CAMERA_DRIFT_MM,'arena':data['arena']}
     return config,calibration
 
 def export_game_calibration(calibration,path):
@@ -64,6 +65,13 @@ def export_game_calibration(calibration,path):
     p=Path(path);p.parent.mkdir(parents=True,exist_ok=True);p.write_text(json.dumps(public,indent=2))
     print(f'Browser calibration exported to {p}; reload the page.',flush=True)
 
+def diagnostic_line(sample,decision,now):
+    age=max(0,(now-sample.captured_at)*1000)
+    state='VALID' if sample.valid and sample.pose and age<=250 else 'STALE' if sample.valid and sample.pose else 'INVALID'
+    pose=sample.pose
+    coordinates=f'x={pose.x_mm:.1f} y={pose.y_mm:.1f}mm heading={math.degrees(pose.heading_rad):.1f}deg' if pose else 'pose unavailable'
+    return f'{state} {coordinates} frame_age={min(age,60000):.0f}ms | {decision.status} | command {decision.command.decode()} | armed {decision.armed}'
+
 def terminal_commands(commands):
     try:
         for line in sys.stdin:commands.put(line.strip().lower())
@@ -72,7 +80,7 @@ def terminal_commands(commands):
 async def run_runtime(args,config,calibration,*,tracker_factory=OverheadTracker,link_factory=MotorLink,commands=None):
     controller=PursuitController(config)
     sock=socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
-    tracker=None;link=None;link_task=None;stop=asyncio.Event();seq=0
+    tracker=None;link=None;link_task=None;stop=asyncio.Event();seq=0;run_id=str(uuid.uuid4())
     commands=commands if commands is not None else Queue()
     try:
         sock.bind(('127.0.0.1',args.game_state_port));sock.setblocking(False)
@@ -85,7 +93,7 @@ async def run_runtime(args,config,calibration,*,tracker_factory=OverheadTracker,
             link_task=asyncio.create_task(link.run(stop))
         print(f"Rover {'DRY RUN (no BLE)' if args.dry_run else 'BLE mode'}; game UDP {sock.getsockname()[1]}; waiting disarmed.",flush=True)
         print('g + Enter arms; x + Enter stops; q + Enter exits. B in browser prepares final level.',flush=True)
-        last_print='';tick_count=0;last=Decision(b'X',False,'waiting')
+        last_print='';last_print_at=-1e9;tick_count=0;last=Decision(b'X',False,'waiting')
         while True:
             now=time.monotonic()
             for _ in range(100):
@@ -115,13 +123,14 @@ async def run_runtime(args,config,calibration,*,tracker_factory=OverheadTracker,
             valid=bool(sample.valid and pose and 0<=now-sample.captured_at<=.25 and 0<=pose.x_mm<=914.4 and 0<=pose.y_mm<=508 and math.isfinite(pose.heading_rad))
             if controller.game:
                 g=controller.game
-                telemetry=dict(type='rover_state',version=1,seq=seq,session_id=g['session_id'],calibration_id=calibration.data['calibration_id'],valid=valid,armed=last.armed,status=last.status[:128],frame_age_ms=min(60000,max(0,(now-sample.captured_at)*1000)),footprint=config['footprint'])
+                telemetry=dict(type='rover_state',version=1,run_id=run_id,seq=seq,session_id=g['session_id'],calibration_id=calibration.data['calibration_id'],valid=valid,armed=last.armed,status=last.status[:128],frame_age_ms=min(60000,max(0,(now-sample.captured_at)*1000)),footprint=config['footprint'])
                 if valid:telemetry['pose']=dict(x_mm=pose.x_mm,y_mm=pose.y_mm,heading_rad=pose.heading_rad)
                 if args.rover_state_port:sock.sendto(json.dumps(telemetry).encode(),('127.0.0.1',args.rover_state_port))
                 if last.contact_event and args.rover_state_port:sock.sendto(json.dumps(last.contact_event).encode(),('127.0.0.1',args.rover_state_port))
                 seq+=1
-            printed=f'{last.status} | command {last.command.decode()} | armed {last.armed}'
-            if printed!=last_print:print(printed,flush=True);last_print=printed
+            printed=diagnostic_line(sample,last,now)
+            if last.status!=last_print or now-last_print_at>=1:
+                print(printed,flush=True);last_print=last.status;last_print_at=now
             tick_count+=1
             if args.frames and tick_count>=args.frames:break
             await asyncio.sleep(.05)
@@ -135,7 +144,7 @@ async def run_runtime(args,config,calibration,*,tracker_factory=OverheadTracker,
             except (Exception,asyncio.CancelledError):pass
         if controller.game and args.rover_state_port:
             g=controller.game
-            telemetry=dict(type='rover_state',version=1,seq=seq,session_id=g['session_id'],calibration_id=calibration.data['calibration_id'],valid=False,armed=False,status='shutdown',frame_age_ms=60000,footprint=config['footprint'])
+            telemetry=dict(type='rover_state',version=1,run_id=run_id,seq=seq,session_id=g['session_id'],calibration_id=calibration.data['calibration_id'],valid=False,armed=False,status='shutdown',frame_age_ms=60000,footprint=config['footprint'])
             try:sock.sendto(json.dumps(telemetry).encode(),('127.0.0.1',args.rover_state_port))
             except OSError:pass
         if tracker:tracker.close()

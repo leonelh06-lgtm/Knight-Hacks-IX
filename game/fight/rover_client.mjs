@@ -1,6 +1,6 @@
 import {validateRoverMessage} from './rover_protocol.mjs';
-export function createRoverClient({socket,sessionId,calibration,onContact=()=>false,onState=()=>{}}) {
- let claimed=false,closed=false,seq=0,lastState=null,telemetrySeq=-1;
+export function createRoverClient({socket,sessionId,calibration,onContact=()=>false,onState=()=>{},onRestart=()=>{}}) {
+ let claimed=false,closed=false,seq=0,lastState=null,telemetrySeq=-1,runId=null;const retiredRuns=new Set();
  const send=m=>{if(socket.readyState===1){socket.send(JSON.stringify(m));return true;}return false;};
  const claim=()=>{if(!closed)send({type:'claim_game',version:1,session_id:sessionId});};
  function acknowledgeContact(event) {
@@ -13,7 +13,18 @@ export function createRoverClient({socket,sessionId,calibration,onContact=()=>fa
   if(m.type==='game_claim_rejected'&&m.session_id===sessionId){claimed=false;onState({status:'Another tab owns the rover'});return;}
   if(!claimed||m.session_id!==sessionId||m.calibration_id!==calibration?.calibration_id)return;
   try{validateRoverMessage(m);}catch{return;}
-  if(m.type==='rover_state'&&m.seq>telemetrySeq){telemetrySeq=m.seq;onState(m);}
+  if(m.type==='rover_state'){
+   if(m.run_id!==runId){
+    if(retiredRuns.has(m.run_id))return;
+    if(runId!==null){
+     retiredRuns.add(runId);
+     if(lastState){lastState={...lastState,seq:seq++,active:false};send(lastState);}
+     onRestart();
+    }
+    runId=m.run_id;telemetrySeq=-1;
+   }
+   if(m.seq>telemetrySeq){telemetrySeq=m.seq;onState(m);}
+  }
   if(m.type==='rover_contact'&&lastState?.physical_boss&&lastState.level_id===m.level_id&&onContact(m))acknowledgeContact(m);
  };
  const disconnected=()=>{claimed=false;onState({armed:false,status:'Relay disconnected'});};

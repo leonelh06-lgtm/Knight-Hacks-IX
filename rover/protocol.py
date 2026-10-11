@@ -28,6 +28,7 @@ def validate_message(m):
   if x+w>914.400001 or y+h>508.000001:raise ValueError('Arena exceeds board')
   number(p.get('x_mm'),x,x+w);number(p.get('y_mm'),y,y+h);number(p.get('radius_mm'),.01,min(w,h)/2)
  elif kind=='rover_state':
+  text(m.get('run_id'))
   for k in ('valid','armed'):
    if not isinstance(m.get(k),bool):raise ValueError('Boolean required')
   text(m.get('status'));number(m.get('frame_age_ms'),0,60000)

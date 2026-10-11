@@ -4,6 +4,7 @@ from unittest.mock import patch
 import numpy as np
 from rover.vision import PoseSample,OverheadTracker
 from rover.types import Pose
+from rover.calibration import BoardCalibration
 class Capture:
  def __init__(self):self.closed=False
  def set(self,*a):pass
@@ -11,7 +12,7 @@ class Capture:
  def release(self):self.closed=True
 class VisionTests(unittest.TestCase):
  def cal(self):
-  return SimpleNamespace(data=dict(image_size=[30,20],tag_height_mm=10,centre_offset_mm=[0,0],camera_guard=dict(tag_id=1,corners_px=[[1,1],[5,1],[5,5],[1,5]])),tag_to_rover=lambda *a:Pose(100,100,0))
+  return BoardCalibration(dict(version=1,calibration_id='c',camera='1',image_size=[30,20],tag_height_mm=10,centre_offset_mm=[0,0],camera_matrix=[[20,0,15],[0,20,10],[0,0,1]],distortion=[0]*5,rotation=np.eye(3).tolist(),translation=[-457.2,-254,1000],arena=dict(x_mm=0,y_mm=0,width_mm=914.4,height_mm=508),camera_guard=dict(markers=[dict(tag_id=1,corners_px=[[1,1],[5,1],[5,5],[1,5]]),dict(tag_id=2,corners_px=[[25,15],[29,15],[29,19],[25,19]])])))
  def test_snapshot_retains_capture_age(self):
   t=OverheadTracker(1,0,None);t._sample=PoseSample(None,10,False,'')
   self.assertEqual(t.latest().captured_at,10);self.assertFalse(t.latest().valid)
@@ -22,7 +23,7 @@ class VisionTests(unittest.TestCase):
   entered=threading.Event();release=threading.Event();cap=Capture();marker=np.array([[[10,10],[15,10],[15,15],[10,15]]],float);guard=np.array([[[1,1],[5,1],[5,5],[1,5]]],float)
   class Detector:
    def detectMarkers(self,frame):
-    entered.set();release.wait(2);return [marker,guard],np.array([[0],[1]]),[]
+    entered.set();release.wait(2);return [marker,guard,np.array([[[25,15],[29,15],[29,19],[25,19]]],float)],np.array([[0],[1],[2]]),[]
   with patch('rover.vision.open_camera',return_value=cap),patch('cv2.aruco.ArucoDetector',return_value=Detector()):
    t=OverheadTracker(1,0,self.cal());start=time.monotonic();t.start();self.assertTrue(entered.wait(1))
    self.assertFalse(t.latest().valid);self.assertLess(time.monotonic()-start,1);time.sleep(.08);t._stop.set();release.set();t.close()
@@ -31,7 +32,7 @@ class VisionTests(unittest.TestCase):
   cap=Capture()
   class Detector:
    def detectMarkers(self,frame):
-    return [np.array([[[10,10],[15,10],[15,15],[10,15]]]),np.array([[[10,10],[14,10],[14,14],[10,14]]])],np.array([[0],[1]]),[]
+    return [np.array([[[10,10],[15,10],[15,15],[10,15]]]),np.array([[[10,10],[14,10],[14,14],[10,14]]]),np.array([[[34,24],[38,24],[38,28],[34,28]]])],np.array([[0],[1],[2]]),[]
   with patch('rover.vision.open_camera',return_value=cap),patch('cv2.aruco.ArucoDetector',return_value=Detector()):
    t=OverheadTracker(1,0,self.cal());t.start();t._thread.join(1)
    self.assertFalse(t.latest().valid);self.assertIn('moved',t.latest().error);t.close()
