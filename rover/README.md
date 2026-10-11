@@ -64,7 +64,7 @@ stop the rover, and recalibrate before resuming.
    Space records a view, Enter solves after 12 views, Q cancels. RMS must be
    at most 2 pixels. Intrinsics are saved to rover-intrinsics.json.
 
-2. Start the game server and open the game in the Jetson browser. Press 3 to
+2. Start the game server and open the game in the Jetson browser. Press 4 to
    display the final map. Arrange the projection. The HUD shows the canvas pixel
    dimensions; record those values. Measure the projected full canvas rectangle
    on the board: x, y, width, height in mm. The browser maps the full canvas to
@@ -143,7 +143,7 @@ python3 -u -m game.serve
 ```
 
 Open **http://localhost:8000/debug.html** in the Jetson browser. B starts,
-1/2/3 select levels. Keep one game tab open. A second tab cannot take ownership
+1/2/3/4 select levels. Keep one game tab open. A second tab cannot take ownership
 of the rover feed. The server explicitly serves .mjs as JavaScript on Windows
 and Linux.
 
