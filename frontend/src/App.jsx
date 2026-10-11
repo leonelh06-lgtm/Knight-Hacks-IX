@@ -80,7 +80,7 @@ export default function App() {
               A NEW WAY TO PLAY. A LITTLE MAGIC TO GUIDE YOU.
             </p>
             <h1>
-              The Guiding <em>Hands</em>
+              Guiding <em>Hands</em>
               <span className="title-spark" aria-hidden="true">
                 ✧
               </span>

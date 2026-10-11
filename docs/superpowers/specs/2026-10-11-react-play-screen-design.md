@@ -1,11 +1,11 @@
-# The Guiding Hands — player guide
+# Guiding Hands — player guide
 
 ## Intent and approved direction
 Create an aesthetically appealing React and JavaScript companion display for the existing gesture-controlled game. Its purpose is to reduce confusion while players play and keep the character movement gestures easy to remember. Players see the live game, four persistent illustrated gesture reminders, and a small live camera window with the hand-tracking overlay. The UI does not control the game. The user revised the visual direction to Knight Hacks IX: black and purple with white accents. Draw from the official event’s enchanted forest, violet foliage, crystals, and white fantasy lettering; use locally drawn crystal motifs and no remote assets.
 
 ## Player experience
 - Desktop: a compact branded header; a large game panel on the left; a right sidebar with the live tracking preview and four gesture cards. Smaller screens stack the game, preview, and guide without horizontal scrolling.
-- Use “The Guiding Hands” as the title and “Your hands lead the way” as supporting copy. Use the existing dragon asset sparingly as a visual accent.
+- Use “Guiding Hands” as the title and “Your hands lead the way” as supporting copy. Use the existing dragon asset sparingly as a visual accent.
 - Show the existing live game in an embedded panel. The companion UI has no start, pause, reset, focus, fullscreen, calibration, or other game-control buttons, and sends no commands or keyboard events to the game or tracker. The existing game and controller remain responsible for gameplay. Keep all four gesture reminders visible throughout play rather than requiring a tutorial or navigation.
 - Illustrations must visibly distinguish open palm, closed fist, index-thumb pinch, and pinky-thumb pinch. Use carefully drawn SVG hands with highlighted touch points and directional arrows, plus accessible descriptions. Each must be reviewed visually for correct anatomy and pose.
 - Forward/up: open palm toward camera. Down: closed fist with wrist pointing down. Left: index touching thumb, remaining fingers extended. Right: pinky touching thumb, remaining fingers extended. Include a short note that a relaxed hand stops movement.

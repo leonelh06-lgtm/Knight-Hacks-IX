@@ -339,7 +339,7 @@ References: [MediaPipe Hand Landmarker](https://developers.google.com/edge/media
 [MediaPipe packages and privacy notice](https://pypi.org/project/mediapipe/),
 [NHS rehabilitation exercise resource](https://www.worcsacute.nhs.uk/documents/documents/patient-information-leaflets-a-z/2550-self-directed-rehabilitation-and-information-pack/).
 
-## The Guiding Hands player companion
+## Guiding Hands player companion
 
 The React companion keeps four illustrated movement reminders beside the live
 Forest Motion game and a small camera view with hand landmarks. It is a display

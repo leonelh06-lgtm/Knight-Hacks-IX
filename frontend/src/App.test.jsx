@@ -31,7 +31,7 @@ describe("display-only player guide", () => {
     );
     render(<App />);
     expect(
-      screen.getByRole("heading", { name: /The Guiding Hands/ }),
+      screen.getByRole("heading", { name: /Guiding Hands/ }),
     ).toBeInTheDocument();
     for (const name of ["Forward", "Down", "Left", "Right"])
       expect(screen.getByRole("heading", { name })).toBeVisible();

@@ -1,4 +1,4 @@
-# The Guiding Hands Implementation Plan
+# Guiding Hands Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans for native execution, or superpowers:subagent-driven-development if the user selects delegated execution. Track steps with the checkboxes below.
 
@@ -11,7 +11,7 @@
 **Spec:** `docs/superpowers/specs/2026-10-11-react-play-screen-design.md`
 
 ## Global Constraints
-- Title: “The Guiding Hands”; supporting copy: “Your hands lead the way”. Knight Hacks IX black/purple/white colors and four persistent, accessible SVG hand illustrations.
+- Title: “Guiding Hands”; supporting copy: “Your hands lead the way”. Knight Hacks IX black/purple/white colors and four persistent, accessible SVG hand illustrations.
 - No start, pause, reset, focus, fullscreen, or calibration controls; no gameplay messages or injected keyboard events.
 - Existing tracker owns the camera. Preview is optional, local, at most 320 pixels wide and 10 FPS, with no disk recording or fake footage.
 - Preserve the standalone game, recognition rules, UDP output, and current launches without preview enabled.
@@ -39,7 +39,7 @@
 **Interfaces:** `game_handler(preview_port=8766)` serves existing fight files, the React build, and `/tracking/status` plus `/tracking/stream.mjpg`. `--preview-port` selects the loopback upstream; original `--port` remains supported.
 - [ ] Add failing integration tests using temporary HTTP servers: root redirects to `/play/` with a build, root returns build instructions without one, `/debug.html` still serves, JS MIME types remain correct, status/stream content types are forwarded, unavailable upstream returns 503, and disconnected downstream closes upstream.
 - [ ] Run `python3 -m unittest tests.test_game_server -v`; verify new behavior fails before implementation.
-- [ ] Implement exact-route loopback proxies using urllib with bounded connect/read timeouts, no-cache headers, streamed chunks, and cleanup on disconnect. Do not allow arbitrary proxy destinations. Serve a short “Build The Guiding Hands” page when the React build is absent.
+- [ ] Implement exact-route loopback proxies using urllib with bounded connect/read timeouts, no-cache headers, streamed chunks, and cleanup on disconnect. Do not allow arbitrary proxy destinations. Serve a short “Build Guiding Hands” page when the React build is absent.
 - [ ] Run Task 2 tests plus the full Python suite, then commit the serving changes.
 
 ### Task 3: React player guide and illustrations

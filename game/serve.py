@@ -1,4 +1,4 @@
-"""Serve the game and The Guiding Hands companion with consistent JS MIME types."""
+"""Serve the game and Guiding Hands companion with consistent JS MIME types."""
 import argparse
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -24,8 +24,8 @@ class GameHandler(SimpleHTTPRequestHandler):
                 self.send_header('Location', '/play/')
                 self.end_headers()
             else:
-                body = (b'<!doctype html><meta charset="utf-8"><title>The Guiding Hands</title>'
-                        b'<h1>Build The Guiding Hands</h1><p>From the repository root:</p>'
+                body = (b'<!doctype html><meta charset="utf-8"><title>Guiding Hands</title>'
+                        b'<h1>Build Guiding Hands</h1><p>From the repository root:</p>'
                         b'<pre>npm ci --prefix frontend\nnpm run build --prefix frontend</pre>'
                         b'<a href="/debug.html">Open the standalone game</a>')
                 self.send_response(200)
@@ -75,7 +75,7 @@ def main():
     if not 1 <= args.port <= 65535 or not 1 <= args.preview_port <= 65535:
         parser.error('Ports must be between 1 and 65535.')
     with ThreadingHTTPServer(('127.0.0.1', args.port), game_handler(args.preview_port)) as server:
-        print(f'The Guiding Hands: http://localhost:{server.server_port}/', flush=True)
+        print(f'Guiding Hands: http://localhost:{server.server_port}/', flush=True)
         print(f'Standalone game: http://localhost:{server.server_port}/debug.html', flush=True)
         try:
             server.serve_forever()

@@ -26,7 +26,7 @@ class CompanionServerTests(unittest.TestCase):
    Path(folder,'debug.html').write_text('standalone game')
    url=self.launch(directory=folder)
    with urllib.request.urlopen(url+'/') as response:
-    self.assertIn(b'Build The Guiding Hands',response.read())
+    self.assertIn(b'Build Guiding Hands',response.read())
    with urllib.request.urlopen(url+'/debug.html') as response:
     self.assertEqual(response.read(),b'standalone game')
 
@@ -35,11 +35,11 @@ class CompanionServerTests(unittest.TestCase):
   from pathlib import Path
   with tempfile.TemporaryDirectory() as folder:
    Path(folder,'play').mkdir()
-   Path(folder,'play/index.html').write_text('The Guiding Hands')
+   Path(folder,'play/index.html').write_text('Guiding Hands')
    url=self.launch(directory=folder)
    with urllib.request.urlopen(url+'/') as response:
     self.assertEqual(response.url,url+'/play/')
-    self.assertIn(b'The Guiding Hands',response.read())
+    self.assertIn(b'Guiding Hands',response.read())
 
  def test_unavailable_preview_reports_503(self):
   import socket
