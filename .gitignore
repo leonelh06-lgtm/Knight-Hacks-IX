@@ -10,3 +10,6 @@ calibration.json
 .test-deps/
 demo.png
 benchmark-results/
+esp32_cam/.pio/
+esp32_cam/include/secrets.h
+mbot_ble/**/.pio/

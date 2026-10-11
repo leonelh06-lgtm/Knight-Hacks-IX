@@ -46,6 +46,8 @@ def parse_args():
     parser.add_argument('--pinch-threshold', type=float, default=.28, help='Thumb-tip distance / palm length')
     parser.add_argument('--stale-after', type=float, default=.35, help='Maximum capture age in seconds')
     parser.add_argument('--udp-port', type=int, help='Optional JSON control output to 127.0.0.1')
+    parser.add_argument('--rover-udp-port', type=int,
+                        help='Optional local game-state output for the BLE rover controller')
     parser.add_argument('--simulate', action='store_true', help='Exercise demo without a camera or MediaPipe')
     parser.add_argument('--frames', type=int, default=0, help='Exit after N frames (0 = interactive)')
     parser.add_argument('--screenshot', help='Save final demo frame to a PNG')
@@ -54,8 +56,9 @@ def parse_args():
            (args.speed, args.pinch_threshold, args.stale_after, args.camera_timeout,
             args.smolvlm_stale_after, args.smolvlm_startup_timeout)) or args.frames < 0:
         parser.error('Speed, pinch threshold and stale timeout must be positive; frames must be nonnegative.')
-    if args.udp_port is not None and not 1 <= args.udp_port <= 65535:
-        parser.error('UDP port must be between 1 and 65535.')
+    if any(port is not None and not 1 <= port <= 65535
+           for port in (args.udp_port, args.rover_udp_port)):
+        parser.error('UDP ports must be between 1 and 65535.')
     if args.detector == 'smolvlm' and (args.mode != 'movement' or args.hand != 'any'):
         parser.error('SmolVLM2 supports movement mode with --hand any; show only one hand.')
     return args
@@ -104,6 +107,8 @@ def main():
             note = f'Profile not loaded: {error}'
     tracker = None
     udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) if args.udp_port else None
+    rover_udp = (socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                 if args.rover_udp_port else None)
     if not args.simulate:
         camera = int(args.camera) if args.camera.isdecimal() else args.camera
         if smolvlm:
@@ -125,6 +130,7 @@ def main():
     running = True
     last_stamp = 0
     last_send = 0
+    last_rover_send = 0
     frame_count = 0
     command = controller.stop('Waiting for camera')
     preview_stamp = 0
@@ -213,6 +219,21 @@ def main():
                           'mode': controller.mode, 'timestamp': now}
                 udp.sendto(json.dumps(packet).encode('utf-8'), ('127.0.0.1', args.udp_port))
                 last_send = now
+            if rover_udp is not None and now - last_rover_send >= 1 / 30:
+                packet = {
+                    'type': 'game_state',
+                    'x': position[0],
+                    'y': position[1],
+                    'width': ARENA[0],
+                    'height': ARENA[1],
+                    'active': not paused and wizard is None and running,
+                    'timestamp': now,
+                }
+                rover_udp.sendto(
+                    json.dumps(packet).encode('utf-8'),
+                    ('127.0.0.1', args.rover_udp_port),
+                )
+                last_rover_send = now
             canvas.fill((12, 22, 27))
             arena_rect = pygame.Rect(20, 75, *ARENA)
             pygame.draw.rect(canvas, (25, 51, 46), arena_rect, border_radius=12)
@@ -358,6 +379,19 @@ def main():
                            'timestamp': time.monotonic()}).encode(), ('127.0.0.1', args.udp_port))
             finally:
                 udp.close()
+        if rover_udp is not None:
+            try:
+                rover_udp.sendto(json.dumps({
+                    'type': 'game_state',
+                    'x': position[0],
+                    'y': position[1],
+                    'width': ARENA[0],
+                    'height': ARENA[1],
+                    'active': False,
+                    'timestamp': time.monotonic(),
+                }).encode(), ('127.0.0.1', args.rover_udp_port))
+            finally:
+                rover_udp.close()
         if tracker is not None:
             tracker.close()
         pygame.quit()

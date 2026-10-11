@@ -8,6 +8,20 @@ left, and pinkie-thumb pinch for right**. A partially relaxed hand stops movemen
 A second mode uses four thumb-to-finger
 touches. Robot tracking and enemy collision are future integration work.
 
+## ESP32-CAM rover camera
+
+An Arduino/PlatformIO firmware project for the AI Thinker ESP32-CAM board is in
+[esp32_cam/](esp32_cam/README.md). It serves a camera dashboard on port 80 and an
+MJPEG stream on port 81. Wi-Fi credentials are kept in an ignored local
+`esp32_cam/include/secrets.h` file.
+
+## Makeblock mBot rover
+
+The separate [mbot_ble/](mbot_ble/README.md) project includes BLE scanning,
+verified BLE-to-UART diagnostics, custom mCore motor firmware, manual WASD
+control, and an optional AprilTag rover pursuer that follows the projected
+player character within the game arena.
+
 ## Jetson setup
 
 Target supplied by the team: Orin Nano, JetPack 7.2.1-b49, Python 3.12.3,

@@ -40,3 +40,30 @@ class DemoTests(unittest.TestCase):
                 if process.poll() is None:
                     process.kill()
                     process.communicate()
+
+    def test_simulated_demo_emits_rover_game_state(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as receiver:
+            receiver.bind(('127.0.0.1', 0))
+            receiver.settimeout(15)
+            port = receiver.getsockname()[1]
+            environment = dict(os.environ, SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy')
+            process = subprocess.Popen(
+                [sys.executable, '-m', 'gesture_control', '--simulate',
+                 '--frames', '20', '--rover-udp-port', str(port)],
+                env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            packets = []
+            try:
+                while True:
+                    packet = json.loads(receiver.recv(4096))
+                    packets.append(packet)
+                    if packet['active'] is False:
+                        break
+                stdout, stderr = process.communicate(timeout=15)
+                self.assertEqual(process.returncode, 0, (stdout + stderr).decode(errors='replace'))
+                self.assertTrue(any(packet['type'] == 'game_state' for packet in packets))
+                self.assertEqual((packets[-1]['width'], packets[-1]['height']), (750, 620))
+                self.assertFalse(packets[-1]['active'])
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.communicate()

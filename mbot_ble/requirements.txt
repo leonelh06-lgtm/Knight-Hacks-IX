@@ -1,0 +1,2 @@
+bleak>=0.22,<1
+opencv-contrib-python>=4.10,<5
