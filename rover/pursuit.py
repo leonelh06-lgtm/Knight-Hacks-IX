@@ -73,7 +73,7 @@ class PursuitController:
 
     @property
     def margin(self):
-        return self.config['stopping_distance_mm']+self.config['validation_error_mm']+self.config['extra_margin_mm']+self.config.get('guard_error_mm',0)
+        return self.config['stopping_distance_mm']+self.config['validation_error_mm']+self.config['extra_margin_mm']
 
     def arm(self, now):
         problem=self._problem(now)

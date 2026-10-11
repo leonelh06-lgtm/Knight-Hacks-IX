@@ -23,7 +23,7 @@
 
 ## Review Focus
 
-- Projection resizing or a moved camera must invalidate calibration and prevent motor arming: Tasks 2, 3, 6.
+- Projection resizing must invalidate calibration; a moved camera requires operator stop and manual recalibration in the user-requested single-tag setup: Tasks 2, 3, 6.
 - A second browser tab must not take over an armed rover's target: Task 2.
 - Blocking camera detection or BLE writes must not leave a drive command held indefinitely: Tasks 4, 5, 7.
 - Repeated or delayed contact events must not repeatedly apply defeat/damage: Tasks 4, 6.
@@ -156,3 +156,9 @@ synthetic geometry and fake transport while those measurements are collected.
 Software tasks 1–7 are implemented and tested. Independent review findings were
 fixed with regression tests; hardware steps in Task 8 remain pending. See
 ../reviews/2026-10-10-rover-final-boss-review.md for verification and decisions.
+
+## Single-tag scope update (2026-10-11)
+The user requested removal of all fixed reference tags because only the rover
+tag is available. Loader, vision and calibration validation now require only
+that tag. Camera/projector movement uses manual invalidation and recalibration;
+existing tag-loss, stale-data, edge guards and explicit arming are retained.
