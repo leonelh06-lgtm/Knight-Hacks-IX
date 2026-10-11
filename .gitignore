@@ -10,3 +10,9 @@ calibration.json
 demo.png
 node_modules/
 .claude/
+
+# Measured local rover calibration and motion configuration
+rover-config.json
+rover-calibration.json
+rover-intrinsics.json
+game/fight/rover-calibration.json

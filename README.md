@@ -6,7 +6,7 @@ a top-down forest arena. Both hands are supported. The hand faces the camera, pa
 out. Default controls use **open hand for up, fist for down, index-thumb pinch for
 left, and pinkie-thumb pinch for right**. A partially relaxed hand stops movement.
 A second mode uses four thumb-to-finger
-touches. Robot tracking and enemy collision are future integration work.
+touches. An autonomous overhead-camera rover can serve as the final boss; see [rover setup](rover/README.md).
 
 ## Jetson setup
 
@@ -51,7 +51,7 @@ Headless mode defaults to UDP port 5005 when `--udp-port` is omitted.
 Terminal 3, from the repository root, serves the game:
 
 ```bash
-python3 -m http.server 8000 --bind 127.0.0.1 --directory game/fight
+python3 -u -m game.serve
 ```
 
 Open **http://localhost:8000/debug.html** in the Jetson browser, then press B to

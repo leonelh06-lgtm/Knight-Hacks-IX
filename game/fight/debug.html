@@ -6,6 +6,35 @@ import { createFight } from './fight.js';
 import { DodgePredictor } from './predictor.mjs';
 import { makeAdaptive, makeRandomShift, withEscapeCheck } from './aim.mjs';
 import { LEVELS } from './levels.mjs';
+import { createRoverClient } from './rover_client.mjs';
+import { createRoverBoss, toBoardPlayer, roverEligible } from './rover_boss.mjs';
+let roverCalibration = null;
+try {
+  const response = await fetch('./rover-calibration.json', {cache:'no-store'});
+  if (response.ok) roverCalibration = await response.json();
+} catch (error) { console.warn('Rover calibration unavailable', error); }
+const physicalBossEnabled = new URLSearchParams(location.search).get('physicalBoss') !== '0';
+const isPhysicalBoss = () => physicalBossEnabled && currentLevel().physicalBoss;
+let roverClient = null, roverSession = crypto.randomUUID(), roverTelemetry = null, roverTelemetryAt = -1e9;
+let projectionInvalid = false, lastRoverPublish = -1e9;
+const physicalState = {phase:'idle', started:false, terminal:false, paused:false, message:'Press B to prepare rover encounter'};
+let contactPolicy = 'end_level';
+let physicalBoss;
+function endPhysicalLevel(outcome='defeat') {
+  physicalState.terminal = true; physicalState.phase = outcome;
+  physicalState.message = outcome === 'victory' ? 'BOSS DEFEATED' : 'ROVER CONTACT — press B to restart';
+  publishRover(true);
+}
+function makePhysicalBoss() {
+  return createRoverBoss({policy: contactPolicy, onDefeat:()=>endPhysicalLevel('defeat')});
+}
+physicalBoss = makePhysicalBoss();
+physicalBoss.reset(roverSession, roverCalibration?.calibration_id);
+// The game team can supply its victory rule/contact policy without changing tracking.
+window.physicalRoverBoss = {
+  finish: endPhysicalLevel,
+  setContactPolicy(policy) { contactPolicy=policy; physicalBoss=makePhysicalBoss(); physicalBoss.reset(roverSession,roverCalibration?.calibration_id); }
+};
 import { createMaze, step as mazeStep } from './maze.mjs';
 import { drawMazeFlat, drawMazeHUD, drawClearScreen } from './maze_view.mjs';
 import { createL2, floorFromRoom } from './l2.mjs';
@@ -70,6 +99,10 @@ function restartL2() { l2State = makeL2State(l2Calibrating ? l2CalibFloor : null
 function startOrRestartL2(t) { transitionAt = null; heroVel = { x: 0, z: 0 }; restartL2(); if (!l2Calibrating) l2State.start(t); }
 
 function loadLevel(i) {
+  if (roverClient) roverClient.close();
+  roverClient = null;
+  physicalState.started = false; physicalState.terminal = false; physicalState.phase = 'idle';
+  physicalState.message = 'Press B to prepare rover encounter';
   levelIndex = Math.max(0, Math.min(LEVELS.length - 1, i));
   const lvl = currentLevel();
   heroSpeed = lvl.heroSpeed;
@@ -93,7 +126,14 @@ const ctl = createFight(cfg, hero, {
   },
 });
 function startCurrentLevel(atTime) {
-  if (currentLevel().mode === 'maze') restartMaze();
+  if (isPhysicalBoss()) {
+    ctl.reset();
+    roverClient?.close(); roverSession = crypto.randomUUID();
+    physicalBoss.reset(roverSession, roverCalibration?.calibration_id);
+    roverTelemetry = null; roverTelemetryAt = -1e9;
+    Object.assign(physicalState, {started:true, terminal:false, paused:false, phase:'waiting', message:'Place tagged rover; arm in rover terminal with g + Enter'});
+    attachRoverClient(); publishRover(true);
+  } else if (currentLevel().mode === 'maze') restartMaze();
   else if (currentLevel().mode === 'l2') startOrRestartL2(atTime);
   else ctl.start(atTime);
 }
@@ -103,8 +143,35 @@ let lastGestureDir = { x: 0, z: 0 }, gestureMsg = null, gestureRecvAt = -1e9;
 let lastNonzeroGestureVel = { x: 0, z: 0 }, gestureZeroSinceT = null; // bridges stop/unclear packets for 150ms
 let gesturePacketTimes = []; // for packets/sec + longest-gap HUD readout
 let ws = null;
+function attachRoverClient() {
+  roverClient?.close();
+  if (!ws) return;
+  roverClient = createRoverClient({
+    socket:ws, sessionId:roverSession, calibration:roverCalibration,
+    onContact:event=>physicalBoss.handleContact(event),
+    onState:state=>{ roverTelemetry=state; roverTelemetryAt=now(); },
+    onRestart:()=>{physicalState.paused=true;physicalState.message='Rover restarted — P to resume, then g + Enter to re-arm';}
+  });
+}
+function publishRover(force=false) {
+  const t=now();
+  if (!roverClient || !roverCalibration || (!force && t-lastRoverPublish<0.05)) return;
+  lastRoverPublish=t;
+  const active=roverEligible({
+    physicalBoss:isPhysicalBoss(), started:physicalState.started, terminal:physicalState.terminal,
+    paused:physicalState.paused, visible:!document.hidden, projectionInvalid,
+    projectionSize:[canvas.width,canvas.height]
+  },roverCalibration);
+  roverClient.publishGame({
+    level_id:currentLevel().id, physical_boss:isPhysicalBoss(), active, terminal:physicalState.terminal,
+    player:toBoardPlayer(hero,cfg.room,roverCalibration.arena,HERO_R)
+  });
+}
+document.addEventListener('visibilitychange',()=>{ if(document.hidden) physicalState.paused=true; publishRover(true); });
+addEventListener('pagehide',()=>roverClient?.close());
 function connectGestureWS() {
   ws = new WebSocket('ws://localhost:8765');
+  attachRoverClient();
   ws.addEventListener('message', (ev) => {
     let m; try { m = JSON.parse(ev.data); } catch { return; }
     if (!Number.isFinite(m.vx) || !Number.isFinite(m.vy)) return;
@@ -145,8 +212,14 @@ addEventListener('keydown', (e) => { keys[e.code] = true;
     else { l2CalibFloor = null; startOrRestartL2(now()); }
   }
   if (e.code === 'KeyB') { if (allCleared) { loadLevel(0); allCleared = false; } startCurrentLevel(now()); }
-  if (e.code === 'KeyR') { if (currentLevel().mode === 'maze') restartMaze(); else if (currentLevel().mode === 'l2') startOrRestartL2(now()); else ctl.reset(); }
-  if (e.code === 'Space') { e.preventDefault(); if (currentLevel().mode === 'boss') ctl.shield(now()); }
+  if (e.code === 'KeyR') {
+    if(isPhysicalBoss()) {physicalState.started=false; physicalState.phase='idle'; publishRover(true);}
+    else if (currentLevel().mode === 'maze') restartMaze();
+    else if (currentLevel().mode === 'l2') startOrRestartL2(now()); else ctl.reset();
+  }
+  if (e.code === 'KeyP' && isPhysicalBoss()) { physicalState.paused=!physicalState.paused; publishRover(true); }
+  if (e.code === 'KeyI') { projectionInvalid=true; publishRover(true); }
+  if (e.code === 'Space') { e.preventDefault(); if (currentLevel().mode === 'boss' && !isPhysicalBoss()) ctl.shield(now()); }
   if (e.code === 'Digit1') { loadLevel(0); startCurrentLevel(now()); }
   if (e.code === 'Digit2') { loadLevel(1); startCurrentLevel(now()); }
   if (e.code === 'Digit3') { loadLevel(2); startCurrentLevel(now()); }
@@ -186,6 +259,8 @@ const HERO_PX = 30, BOSS_PX = 45; // on-screen radii in pixels, fixed regardless
 let S, OX, OY, HERO_R;
 const X = (x) => OX + x * S, Z = (z) => OY + z * S; let last = now();
 function resizeCanvas() {
+  if (S !== undefined) { projectionInvalid=true; physicalState.paused=true; }
+
   canvas.width = window.innerWidth; canvas.height = window.innerHeight;
   const roomWidth = 10 * (canvas.width / canvas.height); // room height fixed at 10, width follows aspect ratio
   cfg.room.minX = -roomWidth / 2; cfg.room.maxX = roomWidth / 2;
@@ -256,7 +331,21 @@ function gesturePacketStats(t) {
   if (mlen > 1e-6) lastMoveDir = { x: mx / mlen, z: mz / mlen };
   const gestureFresh = gestureMsg && (t - gestureRecvAt) < 0.5;
   const gTarget = gestureTargetVel(t);
-  const targetVel = gTarget ? { x: gTarget.x * heroSpeed, z: gTarget.z * heroSpeed } : { x: mx * heroSpeed, z: mz * heroSpeed };
+  let targetVel = gTarget ? { x: gTarget.x * heroSpeed, z: gTarget.z * heroSpeed } : { x: mx * heroSpeed, z: mz * heroSpeed };
+  const physical = isPhysicalBoss();
+  if (physical) {
+    const eligible=roverEligible({physicalBoss:true, started:physicalState.started, terminal:physicalState.terminal,
+      paused:physicalState.paused, visible:!document.hidden, projectionInvalid,
+      projectionSize:[canvas.width,canvas.height]},roverCalibration);
+    if (!physicalState.terminal) {
+      physicalState.phase=eligible && roverTelemetry?.valid && roverTelemetry?.armed && t-roverTelemetryAt<0.5 ? 'playing' : 'waiting';
+      physicalState.message= !roverCalibration ? 'Calibrate rover and projection first' :
+        projectionInvalid ? 'Projection changed — recalibrate and reload' :
+        !eligible ? 'Paused / projection size mismatch — P to resume after setup' :
+        physicalState.phase==='playing' ? 'Physical rover pursuing' : 'Place tagged rover; g + Enter in rover terminal to arm';
+    }
+    if(physicalState.phase!=='playing') {targetVel={x:0,z:0};heroVel={x:0,z:0};}
+  }
   const isMaze = currentLevel().mode === 'maze';
   const isL2 = currentLevel().mode === 'l2';
   if (isL2) { FLOOR.cx = l2State.state.floor.cx; FLOOR.cz = l2State.state.floor.cz; FLOOR.rx = l2State.state.floor.rx; FLOOR.rz = l2State.state.floor.rz; }
@@ -271,7 +360,7 @@ function gesturePacketStats(t) {
   } else if (isL2 && (l2Calibrating || l2State.state.phase !== 'PLAYING')) {
     heroVel = { x: 0, z: 0 }; // freeze on the death / victory card
   } else {
-    if (!isL2 && t < ctl.state.dashUntil) {
+    if (!physical && !isL2 && t < ctl.state.dashUntil) {
       hero.position.x += dashDir.x * heroSpeed * 3 * dt; hero.position.z += dashDir.z * heroSpeed * 3 * dt;
       heroVel = { x: 0, z: 0 }; // so movement eases back in fresh once the dash ends
     } else {
@@ -279,7 +368,7 @@ function gesturePacketStats(t) {
       hero.position.x += heroVel.x * dt; hero.position.z += heroVel.z * dt;
     }
     clampToArena(hero.position);
-    clampToEllipse(hero.position); // for 'l2' levels FLOOR is l2State.state.floor (set above); same clamp code, no new logic
+    if (!physical) clampToEllipse(hero.position);
     clampOutsidePillars(hero.position);
   }
   const moveDx = hero.position.x - prevHeroX, moveDz = hero.position.z - prevHeroZ;
@@ -287,7 +376,9 @@ function gesturePacketStats(t) {
     heroFacingAngle = lerpAngle(heroFacingAngle, Math.atan2(moveDz, moveDx), 1 - Math.exp(-dt / 0.12));
   }
   let f;
-  if (isMaze) {
+  if (physical) {
+    f = physicalState;
+  } else if (isMaze) {
     f = mazeState; // .phase: PLAYING/CLEARED -- CLEARED is this level's "victory"
   } else if (isL2) {
     if (!l2Calibrating) l2State.update(t, dt);
@@ -305,8 +396,9 @@ function gesturePacketStats(t) {
       if (isMaze) console.log(`[${currentLevel().name}] complete in ${f.elapsed.toFixed(2)}s, ${f.stars} stars`);
       if (isL2) console.log(`[${currentLevel().name}] complete in ${f.elapsed.toFixed(2)}s, ${f.deaths} deaths`);
       if (levelIndex < LEVELS.length - 1) { loadLevel(levelIndex + 1); startCurrentLevel(t); requestAnimationFrame(frame); return; } else allCleared = true;
-    } else if (lost) { loadLevel(levelIndex); startCurrentLevel(t); }
+    } else if (lost && !physical) { loadLevel(levelIndex); startCurrentLevel(t); }
   }
+  publishRover();
   prevPhase = f.phase;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (!isMaze) {
@@ -322,14 +414,14 @@ function gesturePacketStats(t) {
   if (isMaze) {
     drawMazeFlat(ctx, { state: mazeState, centerX: mazeCenterX, centerZ: mazeCenterZ, X, Z, S });
   }
-  if (!isMaze && !isL2 && (f.phase === 'warning' || f.phase === 'laser')) {
+  if (!physical && !isMaze && !isL2 && (f.phase === 'warning' || f.phase === 'laser')) {
     const a = Math.atan2(f.aim.z, f.aim.x);
     ctx.fillStyle = f.phase === 'laser' ? 'rgba(255,30,0,.85)' : 'rgba(255,140,0,.45)';
     ctx.beginPath(); ctx.moveTo(X(f.boss.x), Z(f.boss.z));
     ctx.arc(X(f.boss.x), Z(f.boss.z), cfg.range * S, a - cfg.halfAngle, a + cfg.halfAngle); ctx.closePath(); ctx.fill();
     ctx.lineWidth = 14; ctx.strokeStyle = f.phase === 'laser' ? '#fff' : '#ff0'; ctx.stroke();
   }
-  if (!isMaze && !isL2) { ctx.fillStyle = '#ffaa00'; ctx.beginPath(); ctx.arc(X(f.boss.x), Z(f.boss.z), BOSS_PX, 0, 7); ctx.fill(); }
+  if (!physical && !isMaze && !isL2) { ctx.fillStyle = '#ffaa00'; ctx.beginPath(); ctx.arc(X(f.boss.x), Z(f.boss.z), BOSS_PX, 0, 7); ctx.fill(); }
   if (isL2) drawHunters(ctx, f, { X, Z, S, t });
   const heroSX = X(hero.position.x), heroSY = Z(hero.position.z);
   const shieldActive = !isL2 && t < ctl.state.shieldUntil; // shield/dash are hero abilities, independent of the current level's mode
@@ -349,7 +441,12 @@ function gesturePacketStats(t) {
     ctx.fillStyle = shieldActive ? '#00ccff' : '#00ff66'; ctx.beginPath(); ctx.arc(heroSX, heroSY, HERO_PX, 0, 7); ctx.fill();
   }
   const gStats = gesturePacketStats(t);
-  if (!isMaze && !isL2) { // other levels keep their always-on HUD; maze/l2 stay a clean projection unless H is pressed
+  if (physical) {
+    ctx.fillStyle='#fff';ctx.font='16px monospace';
+    ctx.fillText(physicalState.message,10,22);
+    ctx.fillText('Rover: '+(roverTelemetry?.status || 'waiting for controller')+' | B prepare/restart | P pause | I invalidate calibration',10,46);
+    ctx.fillText('Projection pixels: '+canvas.width+' x '+canvas.height,10,70);
+  } else if (!isMaze && !isL2) { // other levels keep their always-on HUD; the maze stays a clean projection unless H is pressed
     ctx.fillStyle = '#fff'; ctx.font = '14px monospace';
     const p = predictor.predict();
     ctx.fillText(`Level ${levelIndex + 1}: ${currentLevel().name} | ${f.message} | player ${f.playerHP} boss ${f.bossHP}/3 | mode ${currentLevel().bossMode}`, 10, 20);
