@@ -13,6 +13,22 @@ import unittest
 
 @unittest.skipUnless(importlib.util.find_spec('pygame'), 'Pygame not installed; pure controls still testable')
 class DemoTests(unittest.TestCase):
+    def test_window_runs_without_initializing_unused_audio_and_joysticks(self):
+        environment = dict(os.environ, SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy')
+        script = '''
+import sys
+from unittest.mock import patch
+import pygame
+from gesture_control.__main__ import main
+sys.argv = ['gesture_control', '--simulate', '--frames', '1']
+with patch.object(pygame, 'init', side_effect=RuntimeError('Unused subsystem startup blocked')):
+    main()
+'''
+        result = subprocess.run([sys.executable, '-u', '-c', script], env=environment,
+                                capture_output=True, timeout=15)
+        self.assertEqual(result.returncode, 0, (result.stdout + result.stderr).decode(errors='replace'))
+        self.assertIn(b'[startup] Window ready', result.stdout)
+
     def test_simulated_demo_emits_movement_and_shutdown_stop(self):
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as receiver, tempfile.TemporaryDirectory() as folder:
             receiver.bind(('127.0.0.1', 0))

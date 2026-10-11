@@ -1,0 +1,296 @@
+[
+  {
+    "valid": true,
+    "message": {
+      "type": "game_state",
+      "version": 1,
+      "session_id": "test",
+      "calibration_id": "cal",
+      "seq": 1,
+      "level_id": "boss-arena",
+      "physical_boss": true,
+      "active": true,
+      "terminal": false,
+      "player": {
+        "x_mm": 400,
+        "y_mm": 220,
+        "radius_mm": 12
+      },
+      "arena": {
+        "x_mm": 0,
+        "y_mm": 0,
+        "width_mm": 914.4,
+        "height_mm": 508
+      }
+    }
+  },
+  {
+    "valid": true,
+    "message": {
+      "type": "rover_state",
+      "version": 1,
+      "session_id": "test",
+      "calibration_id": "cal",
+      "seq": 1,
+      "valid": true,
+      "armed": false,
+      "pose": {
+        "x_mm": 300,
+        "y_mm": 220,
+        "heading_rad": 0
+      },
+      "footprint": {
+        "length_mm": 177.8,
+        "width_mm": 177.8
+      },
+      "frame_age_ms": 40,
+      "status": "disarmed",
+      "run_id": "fixture-run"
+    }
+  },
+  {
+    "valid": true,
+    "message": {
+      "type": "rover_contact",
+      "version": 1,
+      "session_id": "test",
+      "calibration_id": "cal",
+      "level_id": "boss-arena",
+      "event_id": "contact1"
+    }
+  },
+  {
+    "valid": true,
+    "message": {
+      "type": "contact_ack",
+      "version": 1,
+      "session_id": "test",
+      "calibration_id": "cal",
+      "event_id": "contact1"
+    }
+  },
+  {
+    "valid": false,
+    "message": {
+      "type": "game_state",
+      "version": 2,
+      "session_id": "test",
+      "calibration_id": "cal",
+      "seq": 1,
+      "level_id": "boss-arena",
+      "physical_boss": true,
+      "active": true,
+      "terminal": false,
+      "player": {
+        "x_mm": 400,
+        "y_mm": 220,
+        "radius_mm": 12
+      },
+      "arena": {
+        "x_mm": 0,
+        "y_mm": 0,
+        "width_mm": 914.4,
+        "height_mm": 508
+      }
+    }
+  },
+  {
+    "valid": false,
+    "message": {
+      "type": "game_state",
+      "version": 1,
+      "session_id": "test",
+      "calibration_id": "cal",
+      "seq": -1,
+      "level_id": "boss-arena",
+      "physical_boss": true,
+      "active": true,
+      "terminal": false,
+      "player": {
+        "x_mm": 400,
+        "y_mm": 220,
+        "radius_mm": 12
+      },
+      "arena": {
+        "x_mm": 0,
+        "y_mm": 0,
+        "width_mm": 914.4,
+        "height_mm": 508
+      }
+    }
+  },
+  {
+    "valid": false,
+    "message": {
+      "type": "game_state",
+      "version": 1,
+      "session_id": "test",
+      "calibration_id": "cal",
+      "seq": 9007199254740992,
+      "level_id": "boss-arena",
+      "physical_boss": true,
+      "active": true,
+      "terminal": false,
+      "player": {
+        "x_mm": 400,
+        "y_mm": 220,
+        "radius_mm": 12
+      },
+      "arena": {
+        "x_mm": 0,
+        "y_mm": 0,
+        "width_mm": 914.4,
+        "height_mm": 508
+      }
+    }
+  },
+  {
+    "valid": false,
+    "message": {
+      "type": "game_state",
+      "version": 1,
+      "session_id": "",
+      "calibration_id": "cal",
+      "seq": 1,
+      "level_id": "boss-arena",
+      "physical_boss": true,
+      "active": true,
+      "terminal": false,
+      "player": {
+        "x_mm": 400,
+        "y_mm": 220,
+        "radius_mm": 12
+      },
+      "arena": {
+        "x_mm": 0,
+        "y_mm": 0,
+        "width_mm": 914.4,
+        "height_mm": 508
+      }
+    }
+  },
+  {
+    "valid": false,
+    "message": {
+      "type": "game_state",
+      "version": 1,
+      "session_id": "test",
+      "calibration_id": "",
+      "seq": 1,
+      "level_id": "boss-arena",
+      "physical_boss": true,
+      "active": true,
+      "terminal": false,
+      "player": {
+        "x_mm": 400,
+        "y_mm": 220,
+        "radius_mm": 12
+      },
+      "arena": {
+        "x_mm": 0,
+        "y_mm": 0,
+        "width_mm": 914.4,
+        "height_mm": 508
+      }
+    }
+  },
+  {
+    "valid": false,
+    "message": {
+      "type": "game_state",
+      "version": 1,
+      "session_id": "test",
+      "calibration_id": "cal",
+      "seq": 1,
+      "level_id": "boss-arena",
+      "physical_boss": true,
+      "active": 1,
+      "terminal": false,
+      "player": {
+        "x_mm": 400,
+        "y_mm": 220,
+        "radius_mm": 12
+      },
+      "arena": {
+        "x_mm": 0,
+        "y_mm": 0,
+        "width_mm": 914.4,
+        "height_mm": 508
+      }
+    }
+  },
+  {
+    "valid": false,
+    "message": {
+      "type": "game_state",
+      "version": 1,
+      "session_id": "test",
+      "calibration_id": "cal",
+      "seq": 1,
+      "level_id": "boss-arena",
+      "physical_boss": true,
+      "active": true,
+      "terminal": false,
+      "player": {
+        "x_mm": 400,
+        "y_mm": 220,
+        "radius_mm": 12
+      },
+      "arena": {
+        "x_mm": 0,
+        "y_mm": 0,
+        "width_mm": -1,
+        "height_mm": 508
+      }
+    }
+  },
+  {
+    "valid": false,
+    "message": {
+      "type": "game_state",
+      "version": 1,
+      "session_id": "test",
+      "calibration_id": "cal",
+      "seq": 1,
+      "level_id": "boss-arena",
+      "physical_boss": true,
+      "active": true,
+      "terminal": false,
+      "player": {
+        "x_mm": 1000,
+        "y_mm": 220,
+        "radius_mm": 12
+      },
+      "arena": {
+        "x_mm": 0,
+        "y_mm": 0,
+        "width_mm": 914.4,
+        "height_mm": 508
+      }
+    }
+  },
+  {
+    "valid": false,
+    "message": {
+      "type": "rover_state",
+      "version": 1,
+      "session_id": "test",
+      "calibration_id": "cal",
+      "seq": 1,
+      "valid": true,
+      "armed": false,
+      "pose": {
+        "x_mm": 300,
+        "y_mm": 220,
+        "heading_rad": 0
+      },
+      "footprint": {
+        "length_mm": 10000,
+        "width_mm": 177.8
+      },
+      "frame_age_ms": 40,
+      "status": "disarmed",
+      "run_id": "fixture-run"
+    }
+  }
+]

@@ -1,12 +1,16 @@
 // relay.mjs: UDP JSON from gesture_control -> WebSocket for the browser game.
 // Run: npm install ws   then   node relay.mjs   (start gesture_control with --udp-port 5005)
 import dgram from 'node:dgram';
+import {createRoverRelay} from './rover_relay.mjs';
 import { WebSocketServer } from 'ws';
 
 const UDP_PORT = Number(process.env.UDP_PORT ?? 5005);
 const WS_PORT = Number(process.env.WS_PORT ?? 8765);
 const wss = new WebSocketServer({ port: WS_PORT });
 const udp = dgram.createSocket('udp4');
+const rover = createRoverRelay({wss, gameStatePort: Number(process.env.GAME_STATE_PORT ?? 8766), roverStatePort: Number(process.env.ROVER_STATE_PORT ?? 8767)});
+await rover.ready;
+for (const signal of ['SIGINT','SIGTERM']) process.on(signal, async () => { await rover.close(); udp.close(); wss.close(); });
 
 udp.on('message', (buf) => {
   let p;

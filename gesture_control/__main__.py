@@ -34,6 +34,8 @@ def parse_args():
     mirror_options.add_argument('--no-mirror', dest='mirror', action='store_false')
     parser.set_defaults(mirror=False)
     parser.add_argument('--no-preview', action='store_true')
+    parser.add_argument('--headless', action='store_true', help='Camera-to-UDP controls for the web game; no demo window')
+    parser.add_argument('--calibrate', action='store_true', help='Force terminal calibration in headless mode')
     parser.add_argument('--fullscreen', action='store_true')
     parser.add_argument('--profile', default='calibration.json')
     parser.add_argument('--speed', type=float, default=180, help='Maximum pixels/second')
@@ -49,23 +51,44 @@ def parse_args():
         parser.error('Speed, pinch threshold and stale timeout must be positive; frames must be nonnegative.')
     if args.udp_port is not None and not 1 <= args.udp_port <= 65535:
         parser.error('UDP port must be between 1 and 65535.')
+    if args.headless and args.udp_port is None:
+        args.udp_port = 5005
+    if args.calibrate and not args.headless:
+        parser.error('--calibrate requires --headless. In the demo, use C to calibrate.')
+    if args.headless and args.screenshot:
+        parser.error('--screenshot requires the graphical demo.')
     return args
 
 
 def main():
     args = parse_args()
+    print(f'[startup] Controller starting: camera={args.camera}, '
+          f'device={args.inference_device}, udp={args.udp_port or "disabled"}', flush=True)
     if not args.simulate and not Path(args.model).is_file():
         raise SystemExit('Model missing. Run: python -m gesture_control.download_model')
+    if args.headless:
+        from .headless import run_headless
+        run_headless(args)
+        return
     try:
+        print('[startup] Importing Pygame', flush=True)
         import pygame
     except ImportError:
         raise SystemExit('Dependencies missing. Run: python -m pip install -r requirements.txt')
-    pygame.init()
+    # Only these subsystems are used. Full pygame.init() also initializes audio
+    # and joysticks, which can block even when the display itself is working.
+    print('[startup] Initializing display', flush=True)
+    pygame.display.init()
+    print('[startup] Initializing fonts', flush=True)
+    pygame.font.init()
+    print('[startup] Opening controller window', flush=True)
     desktop_width, desktop_height = pygame.display.get_desktop_sizes()[0]
     window_size = SIZE if args.fullscreen else (
         min(SIZE[0], max(640, desktop_width - 80)),
         min(SIZE[1], max(480, desktop_height - 100)))
     display = pygame.display.set_mode(window_size, pygame.FULLSCREEN if args.fullscreen else pygame.RESIZABLE)
+    print('[startup] Window ready; camera preview/calibration is here. '
+          "Play Ethan's levels in the browser.", flush=True)
     pygame.display.set_caption('Forest Motion - local hand control')
     canvas = pygame.Surface(SIZE)
     font = pygame.font.Font(None, 25)
@@ -96,6 +119,7 @@ def main():
                           backend=args.camera_backend, startup_timeout=args.camera_timeout,
                           inference_device=args.inference_device)
         tracker.start()
+        print('[startup] Camera/model worker started', flush=True)
     rng = random.Random(7)
     trees = [(rng.randrange(25, ARENA[0] - 25), rng.randrange(25, ARENA[1] - 25), rng.randrange(16, 28))
              for _ in range(38)]
@@ -110,6 +134,7 @@ def main():
     command = controller.stop('Waiting for camera')
     preview_stamp = 0
     preview = None
+    last_phase = None
     try:
         while running:
             dt = clock.tick(60) / 1000
@@ -156,6 +181,9 @@ def main():
                                     finger_openings=fingers), phase='Tracking')
             else:
                 snapshot = tracker.latest()
+                if snapshot.phase != last_phase:
+                    print('[tracking] ' + snapshot.phase, flush=True)
+                    last_phase = snapshot.phase
             fresh = snapshot.timestamp != last_stamp
             age = now - snapshot.timestamp
             observation = snapshot.observation if 0 <= age <= args.stale_after else None
