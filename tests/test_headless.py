@@ -103,7 +103,7 @@ main()
             def start(self): pass
             def close(self): FakeTracker.closed = True
             def latest(self):
-                return Snapshot(timestamp=time.monotonic(), phase='Tracking',
+                return Snapshot(timestamp=time.monotonic()-.01, phase='Tracking',
                     observation=Observation(.5, .5, .95, (1,) * 4))
         with tempfile.TemporaryDirectory() as folder, socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as receiver:
             receiver.bind(('127.0.0.1', 0))

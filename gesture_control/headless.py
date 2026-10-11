@@ -144,10 +144,21 @@ def run_headless(args, tracker_factory=Tracker, commands=None):
                                'attached, or provide a compatible saved --profile.')
         threading.Thread(target=read_terminal, args=(commands,), daemon=True).start()
     tracker = None
+    preview = None
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     count = 0
     last_status = last_phase = None
     try:
+        if getattr(args, 'web_preview_port', None) is not None:
+            from .web_preview import PreviewServer
+            preview = PreviewServer(port=args.web_preview_port)
+            try:
+                preview.start()
+                print(f'Tracking preview: http://127.0.0.1:{preview.port}', flush=True)
+            except OSError as error:
+                print(f'Preview unavailable; controls continue: {error}', flush=True)
+                preview.close()
+                preview = None
         if not args.simulate:
             camera = int(args.camera) if args.camera.isdecimal() else args.camera
             tracker = tracker_factory(args.model, camera, args.hand, args.mirror,
@@ -171,6 +182,10 @@ def run_headless(args, tracker_factory=Tracker, commands=None):
                     raise RuntimeError('Terminal input closed during calibration.')
                 line = None
             command = session.update(snapshot, now, line)
+            if preview is not None:
+                preview.update(snapshot, command, paused=session.paused,
+                    calibrating=session.wizard is not None, simulated=args.simulate,
+                    stale_after=args.stale_after)
             packet = {'vx': command.velocity[0], 'vy': command.velocity[1],
                       'active': command.active, 'status': command.status,
                       'mode': session.controller.mode, 'timestamp': now}
@@ -191,5 +206,7 @@ def run_headless(args, tracker_factory=Tracker, commands=None):
                 ('127.0.0.1', args.udp_port))
         finally:
             sock.close()
+            if preview is not None:
+                preview.close()
             if tracker is not None:
                 tracker.close()

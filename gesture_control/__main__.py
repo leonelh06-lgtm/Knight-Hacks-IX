@@ -34,6 +34,7 @@ def parse_args():
     mirror_options.add_argument('--no-mirror', dest='mirror', action='store_false')
     parser.set_defaults(mirror=False)
     parser.add_argument('--no-preview', action='store_true')
+    parser.add_argument('--web-preview-port', type=int, help='Optional local tracking preview port (headless only)')
     parser.add_argument('--headless', action='store_true', help='Camera-to-UDP controls for the web game; no demo window')
     parser.add_argument('--calibrate', action='store_true', help='Force terminal calibration in headless mode')
     parser.add_argument('--fullscreen', action='store_true')
@@ -51,6 +52,8 @@ def parse_args():
         parser.error('Speed, pinch threshold and stale timeout must be positive; frames must be nonnegative.')
     if args.udp_port is not None and not 1 <= args.udp_port <= 65535:
         parser.error('UDP port must be between 1 and 65535.')
+    if args.web_preview_port is not None and (not args.headless or not 1 <= args.web_preview_port <= 65535):
+        parser.error('--web-preview-port requires --headless and a port between 1 and 65535.')
     if args.headless and args.udp_port is None:
         args.udp_port = 5005
     if args.calibrate and not args.headless:
