@@ -338,3 +338,51 @@ clinical progress. Keep movements comfortable and use pause/rest as needed.
 References: [MediaPipe Hand Landmarker](https://developers.google.com/edge/mediapipe/solutions/vision/hand_landmarker/python),
 [MediaPipe packages and privacy notice](https://pypi.org/project/mediapipe/),
 [NHS rehabilitation exercise resource](https://www.worcsacute.nhs.uk/documents/documents/patient-information-leaflets-a-z/2550-self-directed-rehabilitation-and-information-pack/).
+
+## The Guiding Hands player companion
+
+The React companion keeps four illustrated movement reminders beside the live
+Forest Motion game and a small camera view with hand landmarks. It is a display
+only: it sends no start, pause, reset, calibration, or movement commands.
+
+Install and build once from the repository root (Node.js 20.19+ or 22.12+):
+
+```bash
+npm ci --prefix frontend
+npm run build --prefix frontend
+```
+
+Keep the existing relay running (`node game/fight/relay.mjs`). Start the existing
+headless tracker with its optional preview enabled:
+
+```bash
+python3 -u -m gesture_control --headless --inference-device gpu --camera 0 --udp-port 5005 --web-preview-port 8766
+```
+
+Then serve and open the companion:
+
+```bash
+python3 -m game.serve
+# Open http://localhost:8000/
+```
+
+The standalone game remains at `http://localhost:8000/debug.html`. With no React
+build, the server root explains the build commands. A missing camera/preview
+shows “Camera offline”; the game still runs. Calibration stays in the controller
+terminal. `--web-preview-port` is opt-in and headless-only. If using another
+preview port, also pass that port to `python3 -m game.serve --preview-port PORT`.
+Both servers bind only to loopback; run the browser on the same computer as the
+tracker. Only the Python tracker opens the webcam. Preview frames are not saved.
+
+For UI development, keep the Python server running and use:
+
+```bash
+npm run dev --prefix frontend
+# Open http://localhost:5173/play/
+npm test --prefix frontend
+```
+
+Vite proxies the existing game files and local tracking endpoints. Builds are
+ignored in Git and must be rebuilt after frontend changes. No CDN is needed at
+runtime. `--simulate --web-preview-port 8766` verifies status connections without
+a webcam and is explicitly labeled as simulation; it does not show camera video.

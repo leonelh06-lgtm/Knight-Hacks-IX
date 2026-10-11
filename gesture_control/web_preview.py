@@ -1,7 +1,10 @@
 """Optional loopback-only, read-only view of the existing camera worker."""
 import json
+import select
+import socket
 import threading
 import time
+from urllib.parse import urlsplit
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 EDGES = ((0,1),(1,2),(2,3),(3,4),(0,5),(5,6),(6,7),(7,8),
@@ -30,7 +33,8 @@ class PreviewServer:
                 pass
 
             def do_GET(self):
-                if self.path == '/status':
+                path = urlsplit(self.path).path
+                if path == '/status':
                     body = json.dumps(owner.status()).encode()
                     self.send_response(200)
                     self.send_header('Content-Type', 'application/json')
@@ -38,7 +42,7 @@ class PreviewServer:
                     self.send_header('Content-Length', str(len(body)))
                     self.end_headers()
                     self.wfile.write(body)
-                elif self.path == '/stream.mjpg':
+                elif path == '/stream.mjpg':
                     self.connection.settimeout(2)
                     self.send_response(200)
                     self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=frame')
@@ -47,6 +51,9 @@ class PreviewServer:
                     last = None
                     try:
                         while not owner.stopped.is_set():
+                            readable, _, _ = select.select([self.connection], [], [], 0)
+                            if readable and not self.connection.recv(1, socket.MSG_PEEK):
+                                break
                             stamp, jpeg = owner.frame()
                             if jpeg is not None and stamp != last:
                                 self.wfile.write(b'--frame\r\nContent-Type: image/jpeg\r\nContent-Length: '

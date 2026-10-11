@@ -55,7 +55,7 @@ class PreviewTests(unittest.TestCase):
                 self.assertEqual(state['direction'], 'stop')
 
     def test_stream_wait_does_not_block_publishing_or_shutdown(self):
-        response = urlopen(self.url+'/stream.mjpg', timeout=2)
+        response = urlopen(self.url+'/stream.mjpg?retry=1', timeout=2)
         self.addCleanup(response.close)
         self.assertIn('multipart/x-mixed-replace',response.headers['Content-Type'])
         start = time.monotonic()
@@ -64,6 +64,17 @@ class PreviewTests(unittest.TestCase):
         self.assertLess(time.monotonic()-start,.2)
         self.preview.close()
         self.assertFalse(self.preview.thread.is_alive())
+
+    def test_disconnected_viewer_exits_even_without_camera_frames(self):
+        before = {t.ident for t in threading.enumerate()}
+        response = urlopen(self.url+'/stream.mjpg',timeout=2)
+        workers = [t for t in threading.enumerate() if t.ident not in before
+                   and 'process_request_thread' in t.name]
+        self.assertTrue(workers)
+        response.close()
+        for worker in workers:
+            worker.join(1)
+            self.assertFalse(worker.is_alive(), 'Disconnected viewer must release its worker')
 
     def test_occupied_port_does_not_leave_a_server_thread(self):
         other = PreviewServer(port=self.preview.port)

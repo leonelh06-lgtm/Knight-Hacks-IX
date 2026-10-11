@@ -58,5 +58,5 @@ class CompanionServerTests(unittest.TestCase):
   with urllib.request.urlopen(url+'/tracking/status',timeout=3) as response:
    self.assertEqual(response.headers.get_content_type(),'application/json')
    self.assertIn(b'frameAgeMs',response.read())
-  with urllib.request.urlopen(url+'/tracking/stream.mjpg',timeout=3) as response:
+  with urllib.request.urlopen(url+'/tracking/stream.mjpg?retry=1',timeout=3) as response:
    self.assertIn('multipart/x-mixed-replace',response.headers['Content-Type'])

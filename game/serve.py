@@ -5,6 +5,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.request import urlopen
 from urllib.error import URLError
+from urllib.parse import urlsplit
 
 
 class GameHandler(SimpleHTTPRequestHandler):
@@ -16,7 +17,8 @@ class GameHandler(SimpleHTTPRequestHandler):
         super().__init__(*args, **kwargs)
 
     def do_GET(self):
-        if self.path in ('/', '/index.html'):
+        path = urlsplit(self.path).path
+        if path in ('/', '/index.html'):
             if Path(self.directory, 'play', 'index.html').is_file():
                 self.send_response(302)
                 self.send_header('Location', '/play/')
@@ -32,13 +34,13 @@ class GameHandler(SimpleHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(body)
             return
-        if self.path in ('/tracking/status', '/tracking/stream.mjpg'):
+        if path in ('/tracking/status', '/tracking/stream.mjpg'):
             self.proxy_preview()
             return
         super().do_GET()
 
     def proxy_preview(self):
-        endpoint = self.path.removeprefix('/tracking')
+        endpoint = urlsplit(self.path).path.removeprefix('/tracking')
         try:
             upstream = urlopen(f'http://127.0.0.1:{self.preview_port}{endpoint}', timeout=2)
         except (URLError, OSError):
