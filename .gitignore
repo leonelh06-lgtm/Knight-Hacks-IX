@@ -10,3 +10,6 @@ calibration.json
 demo.png
 node_modules/
 .claude/
+
+frontend/node_modules/
+game/fight/play/

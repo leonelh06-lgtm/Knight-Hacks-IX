@@ -1,7 +1,7 @@
 # The Guiding Hands — player guide
 
 ## Intent and approved direction
-Create an aesthetically appealing React and JavaScript companion display for the existing gesture-controlled game. Its purpose is to reduce confusion while players play and keep the character movement gestures easy to remember. Players see the live game, four persistent illustrated gesture reminders, and a small live camera window with the hand-tracking overlay. The UI does not control the game. The chosen default style is enchanted forest: deep greens, warm cream typography, restrained gold accents, subtle glow, and generous spacing.
+Create an aesthetically appealing React and JavaScript companion display for the existing gesture-controlled game. Its purpose is to reduce confusion while players play and keep the character movement gestures easy to remember. Players see the live game, four persistent illustrated gesture reminders, and a small live camera window with the hand-tracking overlay. The UI does not control the game. The user revised the visual direction to Knight Hacks IX: black and purple with white accents. Draw from the official event’s enchanted forest, violet foliage, crystals, and white fantasy lettering; use locally drawn crystal motifs and no remote assets.
 
 ## Player experience
 - Desktop: a compact branded header; a large game panel on the left; a right sidebar with the live tracking preview and four gesture cards. Smaller screens stack the game, preview, and guide without horizontal scrolling.
