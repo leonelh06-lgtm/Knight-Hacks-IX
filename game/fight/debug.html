@@ -1,7 +1,24 @@
 <!doctype html><meta charset="utf-8">
 <style>html,body{margin:0;overflow:hidden}</style>
-<canvas id="c" style="background:#111;display:block"></canvas>
+<canvas id="c" style="background:#111;display:block" aria-label="Lenny's journey game"></canvas>
+<link rel="stylesheet" href="./intro.css">
+<button id="skip-intro" class="intro-action" type="button">Skip intro · Esc</button>
+<button id="replay-intro" class="intro-action" type="button" hidden>Replay opening · I</button>
+<div id="intro-caption" aria-live="polite"><span class="speaker" id="intro-speaker"></span><span class="line" id="intro-line"></span></div>
+<section id="lesson-card" aria-label="Movement tutorial" hidden>
+ <p class="eyebrow" id="lesson-count"></p>
+ <div class="lesson-top"><div id="lesson-icon"></div><div><h1 id="lesson-title"></h1><p id="lesson-action"></p></div></div>
+ <p id="lesson-detail"></p>
+ <div class="lesson-keyboard">Keyboard alternative <kbd id="lesson-key"></kbd></div>
+ <div class="lesson-meter"><div id="lesson-progress"></div></div>
+ <p id="lesson-feedback" role="status"></p>
+ <div id="lesson-steps" aria-hidden="true"></div>
+</section>
 <script type="module">
+import { drawLennyEyes } from './lenny.mjs';
+import { createIntro } from './intro.mjs';
+import { drawIntro, bindIntroUI } from './intro_view.mjs';
+const intro = createIntro();
 import { createFight } from './fight.js';
 import { DodgePredictor } from './predictor.mjs';
 import { makeAdaptive, makeRandomShift, withEscapeCheck } from './aim.mjs';
@@ -123,7 +140,14 @@ function connectGestureWS() {
   ws.addEventListener('error', () => ws.close());
 }
 connectGestureWS();
-addEventListener('keydown', (e) => { keys[e.code] = true;
+addEventListener('keydown', (e) => {
+  if (e.code === 'KeyI') { if (!e.repeat) replayIntro(); return; }
+  if (/^Digit[1-4]$/.test(e.code)) { intro.state.phase = 'done'; introUI.update(); }
+  if (intro.state.phase !== 'done') {
+    if (e.code === 'Escape') { e.preventDefault(); if (!e.repeat) { intro.skip(); if (intro.state.phase === 'done') finishIntro(); } return; }
+    if (!['KeyW','KeyA','KeyS','KeyD'].includes(e.code)) return;
+  }
+  keys[e.code] = true;
   // --- l2 calibration mode: arrows move the ellipse center, Shift+arrows
   // resize rx/ry, Enter prints the art-normalized values to paste into
   // levels.mjs's `l2.FLOOR`. Consumes arrow/enter keys instead of the usual
@@ -249,14 +273,39 @@ function gesturePacketStats(t) {
   if (gesturePacketTimes.length) maxGap = Math.max(maxGap, t - gesturePacketTimes[gesturePacketTimes.length - 1]);
   return { pps, maxGapMs: Math.round(maxGap * 1000) };
 }
+function finishIntro() {
+  restartMaze(); heroVel = { x: 0, z: 0 }; transitionAt = null; prevPhase = 'idle';
+  for (const code of Object.keys(keys)) keys[code] = false;
+  introUI.update();
+}
+function replayIntro() {
+  loadLevel(0); allCleared = false; intro.replay(); heroVel = { x: 0, z: 0 };
+  for (const code of Object.keys(keys)) keys[code] = false;
+  introUI.update();
+}
+const introUI = bindIntroUI(document, intro, finishIntro, replayIntro);
+introUI.update();
+addEventListener('blur', () => { for (const code of Object.keys(keys)) keys[code] = false; });
 (function frame() {
   const t = now(), dt = Math.min(0.05, Math.max(0, t - last)); last = t;
+  if (intro.state.phase !== 'done') {
+    // Freeze all gameplay: only the cinematic/tutorial clock advances.
+    intro.update(dt, { keys, gestureFresh: !!(gestureMsg && t - gestureRecvAt < 0.5), gesture: gestureMsg });
+    if (intro.state.phase === 'done') { finishIntro(); requestAnimationFrame(frame); return; }
+    heroVel = { x: 0, z: 0 };
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const centerX = (cfg.room.minX + cfg.room.maxX) / 2, centerZ = (cfg.room.minZ + cfg.room.maxZ) / 2;
+    drawMazeFlat(ctx, { state: mazeState, centerX, centerZ, X, Z, S });
+    drawIntro(ctx, canvas, intro.state, { sprite: heroSprite, heroX: X(centerX + mazeState.hero.x), heroY: Z(centerZ + mazeState.hero.z) });
+    introUI.update({ gestureFresh: !!(gestureMsg && t - gestureRecvAt < 0.5) });
+    requestAnimationFrame(frame); return;
+  }
   const mx = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0), mz = (keys.KeyS ? 1 : 0) - (keys.KeyW ? 1 : 0);
   const mlen = Math.hypot(mx, mz);
   if (mlen > 1e-6) lastMoveDir = { x: mx / mlen, z: mz / mlen };
   const gestureFresh = gestureMsg && (t - gestureRecvAt) < 0.5;
   const gTarget = gestureTargetVel(t);
-  const targetVel = gTarget ? { x: gTarget.x * heroSpeed, z: gTarget.z * heroSpeed } : { x: mx * heroSpeed, z: mz * heroSpeed };
+  const targetVel = gTarget && mlen < 1e-6 ? { x: gTarget.x * heroSpeed, z: gTarget.z * heroSpeed } : { x: mx * heroSpeed, z: mz * heroSpeed };
   const isMaze = currentLevel().mode === 'maze';
   const isL2 = currentLevel().mode === 'l2';
   if (isL2) { FLOOR.cx = l2State.state.floor.cx; FLOOR.cz = l2State.state.floor.cz; FLOOR.rx = l2State.state.floor.rx; FLOOR.rz = l2State.state.floor.rz; }
@@ -264,7 +313,7 @@ function gesturePacketStats(t) {
   const prevHeroX = hero.position.x, prevHeroZ = hero.position.z;
   if (isMaze) {
     easeVelocity(targetVel, dt);
-    const handActive = !!(gestureFresh && gestureMsg && gestureMsg.active);
+    const handActive = mlen > 1e-6 || !!(gestureFresh && gestureMsg && gestureMsg.active);
     mazeState.heroR = HERO_R;
     mazeStep(mazeState, dt, { vx: heroVel.x, vz: heroVel.z, handActive });
     hero.position.x = mazeCenterX + mazeState.hero.x; hero.position.z = mazeCenterZ + mazeState.hero.z;
@@ -338,9 +387,10 @@ function gesturePacketStats(t) {
     ctx.save();
     ctx.translate(heroSX, heroSY);
     ctx.rotate(heroFacingAngle + Math.PI / 2); // + PI/2: sprite's zero-rotation pose already faces "up" (-PI/2)
-    ctx.filter = 'saturate(180%) brightness(1.05)'; // the source art is a pale green, punch it up a bit
+    ctx.filter = 'hue-rotate(22deg) saturate(1.25) brightness(0.92) contrast(1.06)'; // mint-green body with retained shading and cream horns
     ctx.drawImage(heroSprite, -spriteW / 2, -spriteH / 2, spriteW, spriteH);
     ctx.filter = 'none';
+    drawLennyEyes(ctx, spriteW, spriteH, t);
     ctx.restore();
   } else {
     ctx.fillStyle = shieldActive ? '#00ccff' : '#00ff66'; ctx.beginPath(); ctx.arc(heroSX, heroSY, HERO_PX, 0, 7); ctx.fill();

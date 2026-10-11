@@ -10,12 +10,8 @@ export const LEVELS = [
     l2: { SURVIVE_TIME: 20 },
   },
   {
-    // level2.png now belongs to "The Corrupted Grove"; reusing level1.png here
-    // is an imperfect placeholder (note: both maze.mjs and this boss level
-    // now reference it), acceptable since re-skinning Ruins is out of scope
-    // for this task.
-    name: 'Ruins', map: 'maps/level1.png', mode: 'boss', bossMode: 'adaptive', warning: 1.5,
-    heroSpeed: 3, pillars: true, start: { x: 0, z: 5 },
+    name: 'Corrupted Sanctuary', map: 'maps/level3-corrupted.png', mode: 'boss', bossMode: 'adaptive', warning: 1.5,
+    heroSpeed: 3, pillars: false, start: { x: 0, z: 5 },
   },
   {
     name: 'Boss Arena', map: 'maps/boss.png', mode: 'boss', bossMode: 'adaptive', warning: 1.3,
