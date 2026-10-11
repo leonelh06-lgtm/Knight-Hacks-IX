@@ -1,11 +1,41 @@
-import unittest,time
+import unittest,time,threading
+from types import SimpleNamespace
+from unittest.mock import patch
+import numpy as np
 from rover.vision import PoseSample,OverheadTracker
+from rover.types import Pose
+class Capture:
+ def __init__(self):self.closed=False
+ def set(self,*a):pass
+ def read(self):return True,np.zeros((20,30,3),np.uint8)
+ def release(self):self.closed=True
 class VisionTests(unittest.TestCase):
+ def cal(self):
+  return SimpleNamespace(data=dict(image_size=[30,20],tag_height_mm=10,centre_offset_mm=[0,0],camera_guard=dict(tag_id=1,corners_px=[[1,1],[5,1],[5,5],[1,5]])),tag_to_rover=lambda *a:Pose(100,100,0))
  def test_snapshot_retains_capture_age(self):
   t=OverheadTracker(1,0,None);t._sample=PoseSample(None,10,False,'')
   self.assertEqual(t.latest().captured_at,10);self.assertFalse(t.latest().valid)
  def test_duplicate_tags_rejected(self):
   from rover.vision import unique_marker
-  self.assertIsNone(unique_marker([1,2],[[0],[0]],0))
-  self.assertIsNone(unique_marker([1],[[1]],0))
-  self.assertEqual(unique_marker([7],[[0]],0),7)
+  self.assertIsNone(unique_marker([1,2],[[0],[0]],0));self.assertIsNone(unique_marker([1],[[1]],0));self.assertEqual(unique_marker([7],[[0]],0),7)
+ def test_stalled_detector_does_not_refresh_capture(self):
+  entered=threading.Event();release=threading.Event();cap=Capture();marker=np.array([[[10,10],[15,10],[15,15],[10,15]]],float);guard=np.array([[[1,1],[5,1],[5,5],[1,5]]],float)
+  class Detector:
+   def detectMarkers(self,frame):
+    entered.set();release.wait(2);return [marker,guard],np.array([[0],[1]]),[]
+  with patch('rover.vision.open_camera',return_value=cap),patch('cv2.aruco.ArucoDetector',return_value=Detector()):
+   t=OverheadTracker(1,0,self.cal());start=time.monotonic();t.start();self.assertTrue(entered.wait(1))
+   self.assertFalse(t.latest().valid);self.assertLess(time.monotonic()-start,1);time.sleep(.08);t._stop.set();release.set();t.close()
+   self.assertTrue(t.latest().valid);self.assertLess(t.latest().captured_at-start,.05);self.assertTrue(cap.closed)
+ def test_camera_movement_invalidates_calibration(self):
+  cap=Capture()
+  class Detector:
+   def detectMarkers(self,frame):
+    return [np.array([[[10,10],[15,10],[15,15],[10,15]]]),np.array([[[10,10],[14,10],[14,14],[10,14]]])],np.array([[0],[1]]),[]
+  with patch('rover.vision.open_camera',return_value=cap),patch('cv2.aruco.ArucoDetector',return_value=Detector()):
+   t=OverheadTracker(1,0,self.cal());t.start();t._thread.join(1)
+   self.assertFalse(t.latest().valid);self.assertIn('moved',t.latest().error);t.close()
+ def test_failed_read_invalid(self):
+  cap=Capture();cap.read=lambda:(False,None)
+  with patch('rover.vision.open_camera',return_value=cap):
+   t=OverheadTracker(1,0,self.cal());t.start();t._thread.join(1);self.assertFalse(t.latest().valid);self.assertTrue(t.latest().error);self.assertTrue(cap.closed)

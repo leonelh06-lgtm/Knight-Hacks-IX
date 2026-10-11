@@ -22,7 +22,7 @@ class OverheadTracker:
  def _run(self):
   cap=None
   try:
-   import cv2
+   import cv2,numpy as np
    cap=open_camera(self.camera,self.backend);cap.set(cv2.CAP_PROP_BUFFERSIZE,1)
    dictionary=cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_APRILTAG_36h11)
    detector=cv2.aruco.ArucoDetector(dictionary,cv2.aruco.DetectorParameters())
@@ -32,6 +32,13 @@ class OverheadTracker:
     height,width=frame.shape[:2]
     if [width,height]!=self.calibration.data['image_size']:raise RuntimeError('Camera resolution changed; recalibrate')
     corners,ids,_=detector.detectMarkers(cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY))
+    guard=self.calibration.data.get('camera_guard')
+    reference=unique_marker(corners,ids,guard['tag_id']) if ids is not None and guard else None
+    if reference is None:
+     self._publish(PoseSample(None,captured,False))
+     continue
+    displacement=np.max(np.linalg.norm(reference.reshape(4,2)-np.asarray(guard['corners_px']),axis=1))
+    if displacement>4:raise RuntimeError('Camera or fixed reference tag moved; recalibrate')
     marker=unique_marker(corners,ids,self.tag_id) if ids is not None else None
     pose=None
     if marker is not None:

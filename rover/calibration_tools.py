@@ -27,7 +27,7 @@ def calibrate_intrinsics(camera,backend,output,cols,rows,square_mm):
   Path(output).write_text(json.dumps(data,indent=2));print(f'Intrinsics saved; RMS {rms:.2f}px',flush=True)
  finally:cap.release();cv2.destroyAllWindows()
 
-def calibrate_board(camera,backend,intrinsics,output,tag_height_mm,offset,arena):
+def calibrate_board(camera,backend,intrinsics,output,tag_height_mm,offset,arena,projection_size):
  data=json.loads(Path(intrinsics).read_text())
  if data['camera']!=str(camera):raise ValueError('Intrinsics belong to another camera')
  cap=open_camera(camera,backend);points=[];window='Physical board corners'
@@ -55,7 +55,7 @@ def calibrate_board(camera,backend,intrinsics,output,tag_height_mm,offset,arena)
   candidates.sort(key=lambda c:c[0]);err,R,t=candidates[0]
   if err>2:raise ValueError('Board reprojection error too high')
   if len(candidates)>1 and abs(candidates[1][0]-err)<.05 and not np.allclose(R,candidates[1][1],atol=.01):raise ValueError('Ambiguous board pose; use more tilted view or improve corner calibration')
-  data.update(calibration_id=str(uuid.uuid4()),rotation=R.tolist(),translation=t.tolist(),tag_height_mm=tag_height_mm,centre_offset_mm=list(offset),arena=arena,validation_error_mm=None,verified=False)
+  data.update(projection_size=list(projection_size),calibration_id=str(uuid.uuid4()),rotation=R.tolist(),translation=t.tolist(),tag_height_mm=tag_height_mm,centre_offset_mm=list(offset),arena=arena,validation_error_mm=None,verified=False)
   BoardCalibration(data).save(output);print('Board calibration saved. Validate measured tag locations before arming.',flush=True)
  finally:cap.release();cv2.destroyAllWindows()
 
@@ -63,8 +63,9 @@ def validate_calibration(camera,backend,calibration,tag_id):
  from .vision import unique_marker
  c=BoardCalibration.load(calibration)
  if c.data['camera']!=str(camera):raise ValueError('Wrong calibration camera')
- cap=open_camera(camera,backend);detector=cv2.aruco.ArucoDetector(cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_APRILTAG_36h11),cv2.aruco.DetectorParameters());measured=[]
+ cap=open_camera(camera,backend);detector=cv2.aruco.ArucoDetector(cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_APRILTAG_36h11),cv2.aruco.DetectorParameters());measured=[];guard=None
  try:
+  print('Place a DIFFERENT fixed AprilTag beside the board, visible throughout operation. Do not move it.',flush=True)
   print('Measure rover centre at table centre and near each corner of usable area. Space captures, Enter finishes after 5 locations, Q cancels.',flush=True)
   while True:
    ok,frame=cap.read()
@@ -75,6 +76,12 @@ def validate_calibration(camera,backend,calibration,tag_id):
    cv2.imshow('Reference validation',frame);key=cv2.waitKey(10)&255
    if key in (ord('q'),27):raise RuntimeError('Validation cancelled')
    if key==32 and pose:
+    if guard is None:
+     candidates=[(int(i[0]),marker.reshape(4,2).tolist()) for marker,i in zip(corners,ids) if int(i[0])!=tag_id]
+     if len(candidates)!=1:raise ValueError('Exactly one fixed reference tag, different from rover ID, must be visible')
+     guard={'tag_id':candidates[0][0],'corners_px':candidates[0][1]}
+    reference=unique_marker(corners,ids,guard['tag_id'])
+    if reference is None or np.max(np.linalg.norm(reference.reshape(4,2)-np.asarray(guard['corners_px']),axis=1))>4:raise ValueError('Camera or reference tag moved during validation')
     x,y=map(float,input('Measured rover-centre x_mm y_mm: ').split());measured.append([x,y,pose.x_mm,pose.y_mm])
    if key in (10,13) and len(measured)>=5:break
   a=np.asarray(measured)
@@ -82,5 +89,5 @@ def validate_calibration(camera,backend,calibration,tag_id):
   if np.ptp(a[:,0])<300 or np.ptp(a[:,1])<150:raise ValueError('References must span centre and corners of board')
   error=float(np.max(np.linalg.norm(a[:,:2]-a[:,2:],axis=1)))
   if error>20:raise ValueError(f'Validation error {error:.1f} mm exceeds 20mm. Recalibrate.')
-  c.data.update(validation_error_mm=error,validation_references=measured,verified=True);c.save(calibration);print(f'Validated max error {error:.1f}mm',flush=True)
+  c.data.update(camera_guard=guard,validation_error_mm=error,validation_references=measured,verified=True);c.save(calibration);print(f'Validated max error {error:.1f}mm',flush=True)
  finally:cap.release();cv2.destroyAllWindows()
