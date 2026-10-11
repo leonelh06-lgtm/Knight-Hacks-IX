@@ -8,10 +8,12 @@ import { makeAdaptive, makeRandomShift, withEscapeCheck } from './aim.mjs';
 import { LEVELS } from './levels.mjs';
 import { createMaze, step as mazeStep } from './maze.mjs';
 import { drawMazeFlat, drawMazeHUD, drawClearScreen } from './maze_view.mjs';
+import { createL2, floorFromRoom } from './l2.mjs';
+import { drawHunters, drawHuntHUD } from './l2_view.mjs';
 const cfg = { position: { x: 0, z: 0 }, halfAngle: 0.35, range: 7, counter: 0.5, warning: 1.0,
               room: { minX: 0, maxX: 0, minZ: -1, maxZ: 9 } }; // minX/maxX set by resizeCanvas()
 const SHOW_BORDER = false;
-const FLOOR = { cx: 0, cz: 0, rx: 0, rz: 0 }; // computed as fractions of the arena rect in resizeCanvas(), tune via O overlay
+const FLOOR = { cx: 0, cz: 0, rx: 0, rz: 0 }; // computed as fractions of the arena rect in resizeCanvas(); 'l2' levels overwrite it each frame (see frame())
 const PILLARS = [ // solid obstacles, levels with pillars: true, tune via O overlay
   { cx: -1.8, cz: 3, r: 0.6 }, { cx: 1.8, cz: 3, r: 0.6 },
   { cx: -1.8, cz: 6, r: 0.6 }, { cx: 1.8, cz: 6, r: 0.6 },
@@ -19,18 +21,19 @@ const PILLARS = [ // solid obstacles, levels with pillars: true, tune via O over
 const mapImages = LEVELS.map((lvl) => { const img = new Image(); img.src = lvl.map; return img; });
 const heroSprite = new Image(); heroSprite.src = 'assets/dragon_hero.png'; // top-down, snout faces up (angle -PI/2)
 let showDebugOverlay = false;
+let showLevelHUD = false; // toggled by H; used by both maze and l2 (hidden by default)
 let heroSpeed = 3; // tunable with -/=, reset to the level's base speed whenever a level loads
 const hero = { position: { x: 0, z: 5 } }, predictor = new DodgePredictor();
 const chooseFns = { 'random-shift': makeRandomShift(), adaptive: makeAdaptive(predictor) };
 let levelIndex = 0, allCleared = false, transitionAt = null;
 const TRANSITION_DELAY = 2.5; // seconds the victory/defeat message holds before auto-advancing
 function currentLevel() { return LEVELS[levelIndex]; }
+const L2_INDEX = LEVELS.findIndex((l) => l.mode === 'l2');
 
 // --- Hedge Maze state (Level 1). maze.mjs is purely local-coordinate, (0,0)
 // at the maze's own center; debug.html centers that in the arena rectangle
-// (the same bounds clampToArena uses) and owns the mirrored/HUD toggles.
+// (the same bounds clampToArena uses) and owns the mirrored toggle.
 let mazeMirrored = false; // toggled by Y ("swaps start and goal sides")
-let showMazeHUD = false; // toggled by H
 let mazeState = null; // created once resizeCanvas() has given cfg.room real dimensions
 function makeMazeState() {
   const lvl = LEVELS[0]; // the only 'maze' level today
@@ -45,12 +48,35 @@ function makeMazeState() {
 }
 function restartMaze() { mazeState = makeMazeState(); }
 
+// --- Level 2: two roaming hunters, lethal contact, and a 20-second countdown.
+let l2State = null;
+let l2Calibrating = false; // toggled by T; hero input is paused while true
+let l2CalibFloor = null; // world-space {cx,cz,rx,rz}, edited live, independent of the level's configured FLOOR until Enter is pressed
+function worldFloorToNormalized(floorWorld, room) {
+  const w = room.maxX - room.minX, h = room.maxZ - room.minZ;
+  return { cx: (floorWorld.cx - room.minX) / w, cz: (floorWorld.cz - room.minZ) / h, rx: floorWorld.rx / w, rz: floorWorld.rz / h };
+}
+function makeL2State(floorOverrideWorld) {
+  const lvl = LEVELS[L2_INDEX];
+  const l2cfg = { ...lvl.l2 };
+  if (floorOverrideWorld) l2cfg.FLOOR = worldFloorToNormalized(floorOverrideWorld, cfg.room);
+  return createL2({ ...l2cfg, room: cfg.room, hero, HERO_R, HERO_SPEED: lvl.heroSpeed });
+}
+function restartL2() { l2State = makeL2State(l2Calibrating ? l2CalibFloor : null); }
+// createL2's construction leaves state.phase 'IDLE' ("Press B to start") --
+// unlike maze/boss, it needs an explicit .start() call to actually begin
+// attacking. Skipped while calibrating: hero input is paused and T's whole
+// point is to inspect/adjust geometry, not run a live attack cycle.
+function startOrRestartL2(t) { transitionAt = null; heroVel = { x: 0, z: 0 }; restartL2(); if (!l2Calibrating) l2State.start(t); }
+
 function loadLevel(i) {
   levelIndex = Math.max(0, Math.min(LEVELS.length - 1, i));
   const lvl = currentLevel();
   heroSpeed = lvl.heroSpeed;
+  transitionAt = null;
   if (lvl.mode === 'boss') cfg.warning = lvl.warning;
   if (lvl.mode === 'maze' && mazeState) restartMaze(); // re-entering: fresh run, same mirror state
+  if (lvl.mode === 'l2' && l2State) restartL2();
 }
 loadLevel(0);
 const attackLog = [];
@@ -67,7 +93,9 @@ const ctl = createFight(cfg, hero, {
   },
 });
 function startCurrentLevel(atTime) {
-  if (currentLevel().mode === 'maze') restartMaze(); else ctl.start(atTime);
+  if (currentLevel().mode === 'maze') restartMaze();
+  else if (currentLevel().mode === 'l2') startOrRestartL2(atTime);
+  else ctl.start(atTime);
 }
 const keys = {}, now = () => performance.now() / 1000;
 let lastMoveDir = { x: 0, z: 0 }, dashDir = { x: 0, z: 1 };
@@ -96,16 +124,37 @@ function connectGestureWS() {
 }
 connectGestureWS();
 addEventListener('keydown', (e) => { keys[e.code] = true;
+  // --- l2 calibration mode: arrows move the ellipse center, Shift+arrows
+  // resize rx/ry, Enter prints the art-normalized values to paste into
+  // levels.mjs's `l2.FLOOR`. Consumes arrow/enter keys instead of the usual
+  // handlers below while active, on an 'l2' level only.
+  if (l2Calibrating && currentLevel().mode === 'l2') {
+    const step = 0.1;
+    if (e.code === 'ArrowLeft') { e.shiftKey ? (l2CalibFloor.rx = Math.max(0.5, l2CalibFloor.rx - step)) : (l2CalibFloor.cx -= step); restartL2(); }
+    if (e.code === 'ArrowRight') { e.shiftKey ? (l2CalibFloor.rx += step) : (l2CalibFloor.cx += step); restartL2(); }
+    if (e.code === 'ArrowUp') { e.shiftKey ? (l2CalibFloor.rz += step) : (l2CalibFloor.cz -= step); restartL2(); }
+    if (e.code === 'ArrowDown') { e.shiftKey ? (l2CalibFloor.rz = Math.max(0.5, l2CalibFloor.rz - step)) : (l2CalibFloor.cz += step); restartL2(); }
+    if (e.code === 'Enter') {
+      const norm = worldFloorToNormalized(l2CalibFloor, cfg.room);
+      console.log(`[${currentLevel().name}] FLOOR: ${JSON.stringify({ cx: +norm.cx.toFixed(3), cz: +norm.cz.toFixed(3), rx: +norm.rx.toFixed(3), rz: +norm.rz.toFixed(3) })}`);
+    }
+  }
+  if (e.code === 'KeyT' && currentLevel().mode === 'l2') {
+    l2Calibrating = !l2Calibrating;
+    if (l2Calibrating) { l2CalibFloor = { ...floorFromRoom(cfg.room, LEVELS[L2_INDEX].l2.FLOOR) }; restartL2(); }
+    else { l2CalibFloor = null; startOrRestartL2(now()); }
+  }
   if (e.code === 'KeyB') { if (allCleared) { loadLevel(0); allCleared = false; } startCurrentLevel(now()); }
-  if (e.code === 'KeyR') { if (currentLevel().mode === 'maze') restartMaze(); else ctl.reset(); }
-  if (e.code === 'Space') { e.preventDefault(); ctl.shield(now()); }
+  if (e.code === 'KeyR') { if (currentLevel().mode === 'maze') restartMaze(); else if (currentLevel().mode === 'l2') startOrRestartL2(now()); else ctl.reset(); }
+  if (e.code === 'Space') { e.preventDefault(); if (currentLevel().mode === 'boss') ctl.shield(now()); }
   if (e.code === 'Digit1') { loadLevel(0); startCurrentLevel(now()); }
   if (e.code === 'Digit2') { loadLevel(1); startCurrentLevel(now()); }
   if (e.code === 'Digit3') { loadLevel(2); startCurrentLevel(now()); }
+  if (e.code === 'Digit4') { loadLevel(3); startCurrentLevel(now()); }
   if (e.code === 'KeyN') { loadLevel(Math.min(levelIndex + 1, LEVELS.length - 1)); startCurrentLevel(now()); } // testing: skip ahead
   if (e.code === 'KeyY' && currentLevel().mode === 'maze') { mazeMirrored = !mazeMirrored; restartMaze(); }
   if (e.code === 'KeyO') showDebugOverlay = !showDebugOverlay;
-  if (e.code === 'KeyH') showMazeHUD = !showMazeHUD;
+  if (e.code === 'KeyH') showLevelHUD = !showLevelHUD;
   if (e.code === 'BracketLeft') cfg.warning = Math.max(0.1, +(cfg.warning - 0.1).toFixed(2));
   if (e.code === 'BracketRight') cfg.warning = +(cfg.warning + 0.1).toFixed(2);
   if (e.code === 'Minus') heroSpeed = +(heroSpeed * 0.9).toFixed(3);
@@ -118,7 +167,7 @@ addEventListener('keydown', (e) => { keys[e.code] = true;
     const a = document.createElement('a'); a.href = url; a.download = 'attack_log.csv'; a.click();
     URL.revokeObjectURL(url);
   }
-  if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+  if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && currentLevel().mode === 'boss') {
     const before = ctl.state.dashUntil; ctl.dash(now());
     if (ctl.state.dashUntil !== before) {
       const glen = Math.hypot(lastGestureDir.x, lastGestureDir.z);
@@ -148,10 +197,12 @@ function resizeCanvas() {
   FLOOR.rx = 0.87 * roomWidth / 2;
   FLOOR.rz = 0.67 * roomHeight / 2;
   if (mazeState) restartMaze(); // the maze's pitch/geometry depends on room size
+  if (l2State) { const active = l2State.state.phase !== 'IDLE'; restartL2(); if (active && currentLevel().mode === 'l2' && !l2Calibrating) l2State.start(now()); }
 }
 addEventListener('resize', resizeCanvas);
 resizeCanvas();
 mazeState = makeMazeState(); // first creation, now that cfg.room has real dimensions
+l2State = makeL2State();
 function clampToArena(p) {
   p.x = Math.min(cfg.room.maxX - HERO_R, Math.max(cfg.room.minX + HERO_R, p.x));
   p.z = Math.min(cfg.room.maxZ - HERO_R, Math.max(cfg.room.minZ + HERO_R, p.z));
@@ -199,7 +250,7 @@ function gesturePacketStats(t) {
   return { pps, maxGapMs: Math.round(maxGap * 1000) };
 }
 (function frame() {
-  const t = now(), dt = t - last; last = t;
+  const t = now(), dt = Math.min(0.05, Math.max(0, t - last)); last = t;
   const mx = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0), mz = (keys.KeyS ? 1 : 0) - (keys.KeyW ? 1 : 0);
   const mlen = Math.hypot(mx, mz);
   if (mlen > 1e-6) lastMoveDir = { x: mx / mlen, z: mz / mlen };
@@ -207,6 +258,8 @@ function gesturePacketStats(t) {
   const gTarget = gestureTargetVel(t);
   const targetVel = gTarget ? { x: gTarget.x * heroSpeed, z: gTarget.z * heroSpeed } : { x: mx * heroSpeed, z: mz * heroSpeed };
   const isMaze = currentLevel().mode === 'maze';
+  const isL2 = currentLevel().mode === 'l2';
+  if (isL2) { FLOOR.cx = l2State.state.floor.cx; FLOOR.cz = l2State.state.floor.cz; FLOOR.rx = l2State.state.floor.rx; FLOOR.rz = l2State.state.floor.rz; }
   const mazeCenterX = (cfg.room.minX + cfg.room.maxX) / 2, mazeCenterZ = (cfg.room.minZ + cfg.room.maxZ) / 2;
   const prevHeroX = hero.position.x, prevHeroZ = hero.position.z;
   if (isMaze) {
@@ -215,8 +268,10 @@ function gesturePacketStats(t) {
     mazeState.heroR = HERO_R;
     mazeStep(mazeState, dt, { vx: heroVel.x, vz: heroVel.z, handActive });
     hero.position.x = mazeCenterX + mazeState.hero.x; hero.position.z = mazeCenterZ + mazeState.hero.z;
+  } else if (isL2 && (l2Calibrating || l2State.state.phase !== 'PLAYING')) {
+    heroVel = { x: 0, z: 0 }; // freeze on the death / victory card
   } else {
-    if (t < ctl.state.dashUntil) {
+    if (!isL2 && t < ctl.state.dashUntil) {
       hero.position.x += dashDir.x * heroSpeed * 3 * dt; hero.position.z += dashDir.z * heroSpeed * 3 * dt;
       heroVel = { x: 0, z: 0 }; // so movement eases back in fresh once the dash ends
     } else {
@@ -224,7 +279,7 @@ function gesturePacketStats(t) {
       hero.position.x += heroVel.x * dt; hero.position.z += heroVel.z * dt;
     }
     clampToArena(hero.position);
-    clampToEllipse(hero.position);
+    clampToEllipse(hero.position); // for 'l2' levels FLOOR is l2State.state.floor (set above); same clamp code, no new logic
     clampOutsidePillars(hero.position);
   }
   const moveDx = hero.position.x - prevHeroX, moveDz = hero.position.z - prevHeroZ;
@@ -234,18 +289,22 @@ function gesturePacketStats(t) {
   let f;
   if (isMaze) {
     f = mazeState; // .phase: PLAYING/CLEARED -- CLEARED is this level's "victory"
+  } else if (isL2) {
+    if (!l2Calibrating) l2State.update(t, dt);
+    f = l2State.state; // .phase: IDLE/PLAYING/DEAD/CLEARED -- CLEARED is "victory"
   } else {
     ctl.update(t); f = ctl.state;
     if (f.phase === 'warning' && prevPhase !== 'warning') { pendingMode = currentLevel().bossMode; pendingPredictedDir = predictor.predict().dir; }
   }
-  const won = isMaze ? f.phase === 'CLEARED' : f.phase === 'victory';
-  const lost = !isMaze && f.phase === 'defeat';
+  const won = (isMaze || isL2) ? f.phase === 'CLEARED' : f.phase === 'victory';
+  const lost = !isMaze && !isL2 && f.phase === 'defeat';
   if ((won || lost) && prevPhase !== f.phase) transitionAt = t + TRANSITION_DELAY;
   if (transitionAt !== null && t >= transitionAt) {
     transitionAt = null;
     if (won) {
       if (isMaze) console.log(`[${currentLevel().name}] complete in ${f.elapsed.toFixed(2)}s, ${f.stars} stars`);
-      if (levelIndex < LEVELS.length - 1) { loadLevel(levelIndex + 1); startCurrentLevel(t); } else allCleared = true;
+      if (isL2) console.log(`[${currentLevel().name}] complete in ${f.elapsed.toFixed(2)}s, ${f.deaths} deaths`);
+      if (levelIndex < LEVELS.length - 1) { loadLevel(levelIndex + 1); startCurrentLevel(t); requestAnimationFrame(frame); return; } else allCleared = true;
     } else if (lost) { loadLevel(levelIndex); startCurrentLevel(t); }
   }
   prevPhase = f.phase;
@@ -263,16 +322,17 @@ function gesturePacketStats(t) {
   if (isMaze) {
     drawMazeFlat(ctx, { state: mazeState, centerX: mazeCenterX, centerZ: mazeCenterZ, X, Z, S });
   }
-  if (!isMaze && (f.phase === 'warning' || f.phase === 'laser')) {
+  if (!isMaze && !isL2 && (f.phase === 'warning' || f.phase === 'laser')) {
     const a = Math.atan2(f.aim.z, f.aim.x);
     ctx.fillStyle = f.phase === 'laser' ? 'rgba(255,30,0,.85)' : 'rgba(255,140,0,.45)';
     ctx.beginPath(); ctx.moveTo(X(f.boss.x), Z(f.boss.z));
     ctx.arc(X(f.boss.x), Z(f.boss.z), cfg.range * S, a - cfg.halfAngle, a + cfg.halfAngle); ctx.closePath(); ctx.fill();
     ctx.lineWidth = 14; ctx.strokeStyle = f.phase === 'laser' ? '#fff' : '#ff0'; ctx.stroke();
   }
-  if (!isMaze) { ctx.fillStyle = '#ffaa00'; ctx.beginPath(); ctx.arc(X(f.boss.x), Z(f.boss.z), BOSS_PX, 0, 7); ctx.fill(); }
+  if (!isMaze && !isL2) { ctx.fillStyle = '#ffaa00'; ctx.beginPath(); ctx.arc(X(f.boss.x), Z(f.boss.z), BOSS_PX, 0, 7); ctx.fill(); }
+  if (isL2) drawHunters(ctx, f, { X, Z, S, t });
   const heroSX = X(hero.position.x), heroSY = Z(hero.position.z);
-  const shieldActive = t < ctl.state.shieldUntil; // shield/dash are hero abilities, independent of the current level's mode
+  const shieldActive = !isL2 && t < ctl.state.shieldUntil; // shield/dash are hero abilities, independent of the current level's mode
   if (heroSprite.complete && heroSprite.naturalWidth > 0) {
     const spriteW = HERO_PX * 2, spriteH = spriteW * (heroSprite.naturalHeight / heroSprite.naturalWidth);
     ctx.save();
@@ -289,7 +349,7 @@ function gesturePacketStats(t) {
     ctx.fillStyle = shieldActive ? '#00ccff' : '#00ff66'; ctx.beginPath(); ctx.arc(heroSX, heroSY, HERO_PX, 0, 7); ctx.fill();
   }
   const gStats = gesturePacketStats(t);
-  if (!isMaze) { // other levels keep their always-on HUD; the maze stays a clean projection unless H is pressed
+  if (!isMaze && !isL2) { // other levels keep their always-on HUD; maze/l2 stay a clean projection unless H is pressed
     ctx.fillStyle = '#fff'; ctx.font = '14px monospace';
     const p = predictor.predict();
     ctx.fillText(`Level ${levelIndex + 1}: ${currentLevel().name} | ${f.message} | player ${f.playerHP} boss ${f.bossHP}/3 | mode ${currentLevel().bossMode}`, 10, 20);
@@ -302,12 +362,21 @@ function gesturePacketStats(t) {
     ctx.fillStyle = dashCd > 0 ? '#666' : '#9f6'; ctx.fillRect(10, 108, 100 * (1 - dashCd), 8);
   }
   if (allCleared) { ctx.fillStyle = '#ff0'; ctx.font = '14px monospace'; ctx.fillText('ALL LEVELS CLEARED - press B to play again', 10, 128); }
-  if (isMaze && showMazeHUD) drawMazeHUD(ctx, mazeState, { levelName: currentLevel().name, heroSpeed, pps: gStats.pps });
+  if (isMaze && showLevelHUD) drawMazeHUD(ctx, mazeState, { levelName: currentLevel().name, heroSpeed, pps: gStats.pps });
   if (isMaze && f.phase === 'CLEARED') drawClearScreen(ctx, canvas, mazeState);
+  if (isL2) {
+    drawHuntHUD(ctx, canvas, f, { t, calibrating: l2Calibrating });
+    if (showLevelHUD) {
+      ctx.save(); ctx.fillStyle = '#fff'; ctx.font = '14px monospace';
+      ctx.fillText(`deaths: ${f.deaths} | gesture: ${gestureFresh ? 'OK' : 'LOST'} | R retry · T calibrate · H hide`, 16, canvas.height - 14);
+      ctx.restore();
+    }
+  }
   if (showDebugOverlay) {
     ctx.strokeStyle = '#f0f'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.ellipse(X(FLOOR.cx), Z(FLOOR.cz), FLOOR.rx * S, FLOOR.rz * S, 0, 0, 7); ctx.stroke();
     if (currentLevel().pillars) for (const c of PILLARS) { ctx.beginPath(); ctx.arc(X(c.cx), Z(c.cz), c.r * S, 0, 7); ctx.stroke(); }
+    if (isL2) for (const hunter of f.hunters) { ctx.beginPath(); ctx.arc(X(hunter.position.x), Z(hunter.position.z), hunter.radius * S, 0, 7); ctx.stroke(); }
   }
   requestAnimationFrame(frame);
 })();
